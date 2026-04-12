@@ -1,17 +1,25 @@
 import { z } from "zod";
 
+function trimEnvValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : value;
+}
+
+const nonEmptyStringSchema = z.preprocess(trimEnvValue, z.string().min(1));
+const urlStringSchema = z.preprocess(trimEnvValue, z.string().url());
+const emailStringSchema = z.preprocess(trimEnvValue, z.string().email());
+
 const supabaseClientEnvSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: nonEmptyStringSchema,
+  NEXT_PUBLIC_SUPABASE_URL: urlStringSchema,
 });
 
 const serverEnvSchema = z.object({
-  NEXT_PUBLIC_APP_URL: z.string().url(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  FIRST_SUPER_ADMIN_EMAIL: z.string().email(),
-  OPENAI_API_KEY: z.string().min(1).optional(),
+  NEXT_PUBLIC_APP_URL: urlStringSchema,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: nonEmptyStringSchema,
+  NEXT_PUBLIC_SUPABASE_URL: urlStringSchema,
+  SUPABASE_SERVICE_ROLE_KEY: nonEmptyStringSchema,
+  FIRST_SUPER_ADMIN_EMAIL: emailStringSchema,
+  OPENAI_API_KEY: z.preprocess(trimEnvValue, z.string().min(1)).optional(),
 });
 
 type SupabaseClientEnv = z.infer<typeof supabaseClientEnvSchema>;
