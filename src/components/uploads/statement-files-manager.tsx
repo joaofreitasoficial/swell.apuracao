@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   LoaderCircle,
@@ -49,6 +49,7 @@ function parseUploadResponse(responseText: string) {
     return JSON.parse(responseText || "{}") as {
       error?: string;
       success?: boolean;
+      statementFileId?: string;
     };
   } catch {
     return {
@@ -87,9 +88,14 @@ export function StatementFilesManager({
   const router = useRouter();
   const [isDragging, setIsDragging] = useState(false);
   const [uploads, setUploads] = useState<LocalUpload[]>([]);
+  const [visibleFiles, setVisibleFiles] = useState<StatementFileRecord[]>(files);
   const [isPending, startTransition] = useTransition();
   const reuploadInputRef = useRef<HTMLInputElement | null>(null);
   const [reuploadTargetId, setReuploadTargetId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setVisibleFiles(files);
+  }, [files]);
 
   const uploadSummary = useMemo(() => {
     const pending = uploads.filter((upload) => upload.status === "pending").length;
@@ -131,6 +137,41 @@ export function StatementFilesManager({
     setUploads((current) =>
       current.map((upload) => (upload.id === localId ? updater(upload) : upload)),
     );
+  };
+
+  const upsertVisibleFile = (statementFileId: string, file: File) => {
+    const now = new Date().toISOString();
+
+    setVisibleFiles((current) => {
+      const existingFile = current.find((item) => item.id === statementFileId);
+      const nextFile: StatementFileRecord = {
+        id: statementFileId,
+        apuracaoId,
+        userId: existingFile?.userId ?? "",
+        fileName: file.name,
+        originalFileName: file.name,
+        storageBucket: existingFile?.storageBucket ?? "statement-files",
+        storagePath: existingFile?.storagePath ?? "",
+        mimeType: file.type || "application/pdf",
+        fileSize: file.size,
+        processingStatus: "processed",
+        detectedBankName: existingFile?.detectedBankName ?? null,
+        detectedAccountLabel: existingFile?.detectedAccountLabel ?? null,
+        pageCount: existingFile?.pageCount ?? null,
+        extractedText: existingFile?.extractedText ?? null,
+        processingError: null,
+        createdAt: existingFile?.createdAt ?? now,
+        updatedAt: now,
+      };
+
+      if (existingFile) {
+        return current.map((item) =>
+          item.id === statementFileId ? { ...item, ...nextFile } : item,
+        );
+      }
+
+      return [nextFile, ...current];
+    });
   };
 
   const uploadSingleFile = async (
@@ -192,15 +233,18 @@ export function StatementFilesManager({
           ...upload,
           progress: 100,
           status: "success",
-          statementFileId,
+          statementFileId: response.statementFileId ?? statementFileId,
         }));
+
+        if (response.statementFileId) {
+          upsertVisibleFile(response.statementFileId, file);
+        }
 
         toast.success(
           statementFileId
             ? `${file.name}: arquivo reenviado e processado.`
             : `${file.name}: arquivo enviado e processado.`,
         );
-        router.refresh();
         resolve();
       };
 
@@ -253,6 +297,10 @@ export function StatementFilesManager({
     for (const [index, file] of pdfFiles.entries()) {
       await uploadSingleFile(file, queueItems[index].id, statementFileId);
     }
+
+    startTransition(() => {
+      router.refresh();
+    });
   };
 
   const deleteFile = (statementFileId: string, fileName: string) => {
@@ -276,6 +324,7 @@ export function StatementFilesManager({
       }
 
       toast.success("Arquivo excluido com sucesso.");
+      setVisibleFiles((current) => current.filter((file) => file.id !== statementFileId));
       router.refresh();
     });
   };
@@ -312,7 +361,7 @@ export function StatementFilesManager({
               </p>
             </div>
             <div className="text-right text-sm text-muted-foreground">
-              <p>{files.length} arquivos registrados</p>
+              <p>{visibleFiles.length} arquivos registrados</p>
               <p>
                 {uploadSummary.pending} na fila • {uploadSummary.uploading} enviando •{" "}
                 {uploadSummary.processing} processando
@@ -453,8 +502,8 @@ export function StatementFilesManager({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {files.length > 0 ? (
-            files.map((file) => (
+          {visibleFiles.length > 0 ? (
+            visibleFiles.map((file) => (
               <div
                 key={file.id}
                 className="rounded-2xl border border-border/70 bg-background/70 p-4"
