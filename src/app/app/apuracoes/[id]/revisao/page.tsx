@@ -1,28 +1,35 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { AuditLogPanel } from "@/components/reviews/audit-log-panel";
-import { ReviewTable } from "@/components/reviews/review-table";
+import { ReviewWorkspace } from "@/components/reviews/review-workspace";
 import { EmptyState } from "@/components/shared/empty-state";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { appRouteBuilders } from "@/lib/constants/routes";
-import { formatDateTime } from "@/lib/formatters";
 import {
   getApuracaoById,
+  getReviewWorkspaceCounts,
+  getReviewWorkspaceFilterOptions,
   listAuditLogsByApuracao,
-  listReviewableTransactionsByApuracao,
+  listPaginatedReviewTransactionsByApuracao,
+  parseReviewWorkspaceFilters,
 } from "@/lib/operations/queries";
+import { refreshMonthlySummaries } from "@/lib/summaries/service";
 
 type PageProps = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function ApuracaoReviewPage({ params }: PageProps) {
+export default async function ApuracaoReviewPage({
+  params,
+  searchParams,
+}: PageProps) {
   const { id } = await params;
-  const [apuracao, transactions, auditLogs] = await Promise.all([
+  const resolvedSearchParams = await searchParams;
+  const filters = parseReviewWorkspaceFilters(resolvedSearchParams);
+
+  const [apuracao, counts, filterOptions, auditLogs] = await Promise.all([
     getApuracaoById(id),
-    listReviewableTransactionsByApuracao(id),
+    getReviewWorkspaceCounts(id),
+    getReviewWorkspaceFilterOptions(id),
     listAuditLogsByApuracao(id),
   ]);
 
@@ -30,95 +37,35 @@ export default async function ApuracaoReviewPage({ params }: PageProps) {
     notFound();
   }
 
-  if (transactions.length === 0) {
+  if (counts.total === 0) {
     return (
       <EmptyState
         title="Ainda nao ha transacoes para revisar"
-        description="Envie os PDFs da apuracao e aguarde o pipeline estruturar as movimentacoes. Assim que as linhas forem geradas, a revisao operacional fica disponivel aqui."
+        description="Envie os PDFs da apuracao e aguarde o pipeline estruturar as movimentacoes. Assim que as linhas forem geradas, a revisao premium fica disponivel aqui."
         ctaHref={appRouteBuilders.apuracaoUpload(apuracao.id)}
         ctaLabel="Enviar extratos PDF"
       />
     );
   }
 
+  const [reviewPage, consolidated] = await Promise.all([
+    listPaginatedReviewTransactionsByApuracao(id, filters),
+    filters.tab === "consolidado" ? refreshMonthlySummaries(id) : Promise.resolve(null),
+  ]);
+
   return (
-    <div className="space-y-6">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <p className="text-sm font-medium uppercase tracking-[0.22em] text-muted-foreground">
-              Revisao operacional
-            </p>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              Avalie entrada por entrada antes do consolidado
-            </h1>
-            <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-              A IA apenas estruturou as movimentacoes. A decisao final do que
-              permanece ou fica de fora continua manual, com auditoria e acao em
-              lote.
-            </p>
-          </div>
-
-          <ReviewTable
-            apuracaoId={apuracao.id}
-            initialTransactions={transactions}
-          />
-        </div>
-
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-xl tracking-tight">Resumo da revisao</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <div>
-                <p className="text-muted-foreground">Apuracao</p>
-                <p className="font-medium">{apuracao.fullName}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Cliente</p>
-                <p className="font-medium">{apuracao.clientFullName}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Linhas para revisar</p>
-                <p className="font-medium">{transactions.length}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Atualizada em</p>
-                <p className="font-medium">{formatDateTime(apuracao.updatedAt)}</p>
-              </div>
-              <div className="space-y-2 pt-2">
-                <Button
-                  className="w-full"
-                  render={
-                    <Link href={appRouteBuilders.apuracaoConsolidado(apuracao.id)} />
-                  }
-                >
-                  Abrir consolidado mensal
-                </Button>
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  render={<Link href={appRouteBuilders.apuracao(apuracao.id)} />}
-                >
-                  Voltar para detalhes da apuracao
-                </Button>
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  render={
-                    <Link href={appRouteBuilders.apuracaoUpload(apuracao.id)} />
-                  }
-                >
-                  Gerenciar arquivos PDF
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <AuditLogPanel auditLogs={auditLogs} />
-        </div>
-      </div>
-    </div>
+    <ReviewWorkspace
+      apuracaoId={apuracao.id}
+      apuracaoName={apuracao.fullName}
+      clientName={apuracao.clientFullName}
+      activeTab={filters.tab}
+      initialFilters={filters}
+      counts={counts}
+      filterOptions={filterOptions}
+      initialTransactions={reviewPage.data}
+      pagination={filters.tab === "consolidado" || filters.tab === "logs" ? null : reviewPage.pagination}
+      auditLogs={auditLogs}
+      consolidated={consolidated}
+    />
   );
 }

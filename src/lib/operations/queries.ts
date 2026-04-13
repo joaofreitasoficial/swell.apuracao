@@ -18,6 +18,10 @@ import type {
   ReprocessingJobStatus,
   ReprocessingJobTrigger,
   ReviewDecision,
+  ReviewWorkspaceCounts,
+  ReviewWorkspaceFilterOptions,
+  ReviewWorkspaceFilters,
+  ReviewWorkspaceTab,
   ReviewableTransactionRecord,
   StatementFileRecord,
   TransactionDirection,
@@ -26,6 +30,7 @@ import type {
 } from "@/types/domain";
 
 const PAGE_SIZE = 10;
+const REVIEW_PAGE_SIZE = 200;
 
 type SearchParamsInput = Record<string, string | string[] | undefined>;
 
@@ -386,6 +391,42 @@ export function parseApuracaoListFilters(searchParams: SearchParamsInput) {
     query: getSingleParam(searchParams.query)?.trim() ?? "",
     status: getSingleParam(searchParams.status)?.trim() ?? "",
     page: Number(getSingleParam(searchParams.page) ?? "1") || 1,
+  };
+}
+
+function isReviewWorkspaceTab(value: string): value is ReviewWorkspaceTab {
+  return (
+    value === "pendentes" ||
+    value === "mantidas" ||
+    value === "excluidas" ||
+    value === "consolidado" ||
+    value === "logs"
+  );
+}
+
+export function parseReviewWorkspaceFilters(
+  searchParams: SearchParamsInput,
+): ReviewWorkspaceFilters {
+  const tabParam = getSingleParam(searchParams.tab)?.trim() ?? "pendentes";
+  const monthParam = getSingleParam(searchParams.month)?.trim();
+  const yearParam = getSingleParam(searchParams.year)?.trim();
+  const directionParam = getSingleParam(searchParams.direction)?.trim();
+  const duplicateParam = getSingleParam(searchParams.duplicate)?.trim();
+
+  return {
+    tab: isReviewWorkspaceTab(tabParam) ? tabParam : "pendentes",
+    query: getSingleParam(searchParams.query)?.trim() ?? "",
+    page: Math.max(1, Number(getSingleParam(searchParams.page) ?? "1") || 1),
+    month: monthParam ? Number(monthParam) || null : null,
+    year: yearParam ? Number(yearParam) || null : null,
+    direction:
+      directionParam === "credit" || directionParam === "debit"
+        ? directionParam
+        : "all",
+    duplicate:
+      duplicateParam === "only" || duplicateParam === "hide"
+        ? duplicateParam
+        : "all",
   };
 }
 
@@ -773,6 +814,198 @@ export async function listReviewableTransactionsByApuracao(apuracaoId: string) {
   }
 
   return (data ?? []).map(mapReviewableTransaction);
+}
+
+function applyReviewTransactionFilters<TQuery extends {
+  ilike: (column: string, value: string) => TQuery;
+  eq: (column: string, value: string | number | boolean) => TQuery;
+  or: (filters: string) => TQuery;
+}>(
+  query: TQuery,
+  filters: ReviewWorkspaceFilters,
+) {
+  let nextQuery = query;
+
+  if (filters.query) {
+    nextQuery = nextQuery.or(
+      `description.ilike.%${filters.query}%,bank_name.ilike.%${filters.query}%,account_label.ilike.%${filters.query}%`,
+    );
+  }
+
+  if (filters.month) {
+    nextQuery = nextQuery.eq("month_ref", filters.month);
+  }
+
+  if (filters.year) {
+    nextQuery = nextQuery.eq("year_ref", filters.year);
+  }
+
+  if (filters.direction !== "all") {
+    nextQuery = nextQuery.eq("direction", filters.direction);
+  }
+
+  if (filters.duplicate === "only") {
+    nextQuery = nextQuery.eq("is_duplicate", true);
+  }
+
+  if (filters.duplicate === "hide") {
+    nextQuery = nextQuery.eq("is_duplicate", false);
+  }
+
+  if (filters.tab === "pendentes") {
+    nextQuery = nextQuery.eq("transaction_reviews.decision", "pendente");
+  }
+
+  if (filters.tab === "mantidas") {
+    nextQuery = nextQuery.eq("transaction_reviews.decision", "manter");
+  }
+
+  if (filters.tab === "excluidas") {
+    nextQuery = nextQuery.eq("transaction_reviews.decision", "excluir");
+  }
+
+  return nextQuery;
+}
+
+async function countReviewTransactionsByDecision(
+  apuracaoId: string,
+  decision?: ReviewDecision,
+) {
+  const supabase = await createServerSupabaseClient();
+  let query = supabase
+    .from("transactions")
+    .select("id,transaction_reviews!inner(decision)", {
+      count: "exact",
+      head: true,
+    })
+    .eq("apuracao_id", apuracaoId);
+
+  if (decision) {
+    query = query.eq("transaction_reviews.decision", decision);
+  }
+
+  const { count, error } = await query;
+
+  if (error) {
+    throw new Error(`Falha ao contar transacoes da revisao: ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
+export async function getReviewWorkspaceCounts(
+  apuracaoId: string,
+): Promise<ReviewWorkspaceCounts> {
+  await requireRole("user");
+
+  const [totalResult, pendentes, mantidas, excluidas] = await Promise.all([
+    createServerSupabaseClient().then((supabase) =>
+      supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("apuracao_id", apuracaoId),
+    ),
+    countReviewTransactionsByDecision(apuracaoId, "pendente"),
+    countReviewTransactionsByDecision(apuracaoId, "manter"),
+    countReviewTransactionsByDecision(apuracaoId, "excluir"),
+  ]);
+
+  if (totalResult.error) {
+    throw new Error(`Falha ao contar transacoes totais: ${totalResult.error.message}`);
+  }
+
+  return {
+    total: totalResult.count ?? 0,
+    pendentes,
+    mantidas,
+    excluidas,
+  };
+}
+
+export async function getReviewWorkspaceFilterOptions(
+  apuracaoId: string,
+): Promise<ReviewWorkspaceFilterOptions> {
+  await requireRole("user");
+
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("month_ref,year_ref")
+    .eq("apuracao_id", apuracaoId)
+    .returns<Array<{ month_ref: number; year_ref: number }>>();
+
+  if (error) {
+    throw new Error(`Falha ao carregar opcoes da revisao: ${error.message}`);
+  }
+
+  const months = Array.from(
+    new Set((data ?? []).map((row) => row.month_ref)),
+  ).sort((left, right) => left - right);
+  const years = Array.from(
+    new Set((data ?? []).map((row) => row.year_ref)),
+  ).sort((left, right) => right - left);
+
+  return {
+    months,
+    years,
+  };
+}
+
+export async function listPaginatedReviewTransactionsByApuracao(
+  apuracaoId: string,
+  filters: ReviewWorkspaceFilters,
+) {
+  await requireRole("user");
+
+  const page = Math.max(1, filters.page);
+  const from = (page - 1) * REVIEW_PAGE_SIZE;
+  const to = from + REVIEW_PAGE_SIZE - 1;
+  const supabase = await createServerSupabaseClient();
+
+  let countQuery = supabase
+    .from("transactions")
+    .select("id,transaction_reviews!inner(decision)", {
+      count: "exact",
+      head: true,
+    })
+    .eq("apuracao_id", apuracaoId);
+
+  countQuery = applyReviewTransactionFilters(countQuery, filters);
+
+  const { count, error: countError } = await countQuery;
+
+  if (countError) {
+    throw new Error(`Falha ao contar linhas da revisao: ${countError.message}`);
+  }
+
+  let dataQuery = supabase
+    .from("transactions")
+    .select(
+      "id,apuracao_id,statement_file_id,bank_name,account_label,transaction_date,description,amount,direction,month_ref,year_ref,extraction_confidence,original_text,transaction_hash,is_duplicate,created_at,updated_at,transaction_reviews!inner(id,transaction_id,decision,exclusion_reason,review_note,reviewed_by,reviewed_at,created_at,updated_at)",
+    )
+    .eq("apuracao_id", apuracaoId)
+    .order("transaction_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  dataQuery = applyReviewTransactionFilters(dataQuery, filters);
+
+  const { data, error } = await dataQuery.returns<TransactionRow[]>();
+
+  if (error) {
+    throw new Error(`Falha ao listar linhas da revisao: ${error.message}`);
+  }
+
+  return {
+    filters,
+    data: (data ?? []).map(mapReviewableTransaction),
+    pagination: {
+      page,
+      pageSize: REVIEW_PAGE_SIZE,
+      totalItems: count ?? 0,
+      totalPages: Math.max(1, Math.ceil((count ?? 0) / REVIEW_PAGE_SIZE)),
+    },
+  };
 }
 
 export async function listAuditLogsByApuracao(apuracaoId: string) {

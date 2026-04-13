@@ -282,6 +282,40 @@ export type PaginationMeta = {
   totalPages: number;
 };
 
+export const reviewWorkspaceTabs = [
+  "pendentes",
+  "mantidas",
+  "excluidas",
+  "consolidado",
+  "logs",
+] as const;
+
+export type ReviewWorkspaceTab = (typeof reviewWorkspaceTabs)[number];
+
+export type ReviewWorkspaceDuplicateFilter = "all" | "only" | "hide";
+
+export type ReviewWorkspaceFilters = {
+  tab: ReviewWorkspaceTab;
+  query: string;
+  page: number;
+  month: number | null;
+  year: number | null;
+  direction: "all" | TransactionDirection;
+  duplicate: ReviewWorkspaceDuplicateFilter;
+};
+
+export type ReviewWorkspaceCounts = {
+  total: number;
+  pendentes: number;
+  mantidas: number;
+  excluidas: number;
+};
+
+export type ReviewWorkspaceFilterOptions = {
+  months: number[];
+  years: number[];
+};
+
 export type DashboardKpis = {
   totalClients: number;
   totalApuracoes: number;
