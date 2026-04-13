@@ -2,8 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { TransactionsPreviewTable } from "@/components/operations/transactions-preview-table";
-import { ProcessingLogsList } from "@/components/uploads/processing-logs-list";
-import { ReprocessingJobsList } from "@/components/uploads/reprocessing-jobs-list";
 import { StatementFilesManager } from "@/components/uploads/statement-files-manager";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,8 +9,6 @@ import { appRouteBuilders } from "@/lib/constants/routes";
 import { formatDateTime } from "@/lib/formatters";
 import {
   getApuracaoById,
-  listFileProcessingLogs,
-  listReprocessingJobsByApuracao,
   listStatementFiles,
   listTransactionsByApuracao,
 } from "@/lib/operations/queries";
@@ -23,11 +19,9 @@ type PageProps = {
 
 export default async function ApuracaoUploadPage({ params }: PageProps) {
   const { id } = await params;
-  const [apuracao, files, logs, jobs, transactions] = await Promise.all([
+  const [apuracao, files, transactions] = await Promise.all([
     getApuracaoById(id),
     listStatementFiles(id),
-    listFileProcessingLogs(id),
-    listReprocessingJobsByApuracao(id),
     listTransactionsByApuracao(id),
   ]);
 
@@ -48,7 +42,7 @@ export default async function ApuracaoUploadPage({ params }: PageProps) {
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
             <div>
-              <p className="text-muted-foreground">Apuração</p>
+              <p className="text-muted-foreground">Apuracao</p>
               <p className="font-medium">{apuracao.fullName}</p>
             </div>
             <div>
@@ -60,23 +54,28 @@ export default async function ApuracaoUploadPage({ params }: PageProps) {
               <p className="font-medium">{files.length}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">Última atualização</p>
+              <p className="text-muted-foreground">Ultima atualizacao</p>
               <p className="font-medium">{formatDateTime(apuracao.updatedAt)}</p>
             </div>
             <Button
               className="w-full"
               variant="outline"
+              render={<Link href={appRouteBuilders.apuracaoArquivos(apuracao.id)} />}
+            >
+              Ver arquivos e logs
+            </Button>
+            <Button
+              className="w-full"
+              variant="outline"
               render={<Link href={appRouteBuilders.apuracao(apuracao.id)} />}
             >
-              Voltar para apuração
+              Voltar para apuracao
             </Button>
           </CardContent>
         </Card>
       </div>
 
       <TransactionsPreviewTable transactions={transactions} />
-      <ReprocessingJobsList jobs={jobs} />
-      <ProcessingLogsList logs={logs} />
     </div>
   );
 }

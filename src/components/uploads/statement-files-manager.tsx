@@ -1,18 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  LoaderCircle,
-  RefreshCcw,
-  Trash2,
-  UploadCloud,
-} from "lucide-react";
+import { UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 
-import { StatementFileStatusBadge } from "@/components/uploads/statement-file-status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { appRouteBuilders } from "@/lib/constants/routes";
 import type { StatementFileRecord } from "@/types/domain";
 
 type UploadStatus = "pending" | "uploading" | "processing" | "success" | "error";
@@ -88,14 +84,7 @@ export function StatementFilesManager({
   const router = useRouter();
   const [isDragging, setIsDragging] = useState(false);
   const [uploads, setUploads] = useState<LocalUpload[]>([]);
-  const [visibleFiles, setVisibleFiles] = useState<StatementFileRecord[]>(files);
-  const [isPending, startTransition] = useTransition();
-  const reuploadInputRef = useRef<HTMLInputElement | null>(null);
-  const [reuploadTargetId, setReuploadTargetId] = useState<string | null>(null);
-
-  useEffect(() => {
-    setVisibleFiles(files);
-  }, [files]);
+  const [, startTransition] = useTransition();
 
   const uploadSummary = useMemo(() => {
     const pending = uploads.filter((upload) => upload.status === "pending").length;
@@ -139,46 +128,7 @@ export function StatementFilesManager({
     );
   };
 
-  const upsertVisibleFile = (statementFileId: string, file: File) => {
-    const now = new Date().toISOString();
-
-    setVisibleFiles((current) => {
-      const existingFile = current.find((item) => item.id === statementFileId);
-      const nextFile: StatementFileRecord = {
-        id: statementFileId,
-        apuracaoId,
-        userId: existingFile?.userId ?? "",
-        fileName: file.name,
-        originalFileName: file.name,
-        storageBucket: existingFile?.storageBucket ?? "statement-files",
-        storagePath: existingFile?.storagePath ?? "",
-        mimeType: file.type || "application/pdf",
-        fileSize: file.size,
-        processingStatus: "processed",
-        detectedBankName: existingFile?.detectedBankName ?? null,
-        detectedAccountLabel: existingFile?.detectedAccountLabel ?? null,
-        pageCount: existingFile?.pageCount ?? null,
-        extractedText: existingFile?.extractedText ?? null,
-        processingError: null,
-        createdAt: existingFile?.createdAt ?? now,
-        updatedAt: now,
-      };
-
-      if (existingFile) {
-        return current.map((item) =>
-          item.id === statementFileId ? { ...item, ...nextFile } : item,
-        );
-      }
-
-      return [nextFile, ...current];
-    });
-  };
-
-  const uploadSingleFile = async (
-    file: File,
-    localId: string,
-    statementFileId?: string,
-  ) => {
+  const uploadSingleFile = async (file: File, localId: string) => {
     updateUpload(localId, (upload) => ({
       ...upload,
       status: "uploading",
@@ -233,18 +183,10 @@ export function StatementFilesManager({
           ...upload,
           progress: 100,
           status: "success",
-          statementFileId: response.statementFileId ?? statementFileId,
+          statementFileId: response.statementFileId,
         }));
 
-        if (response.statementFileId) {
-          upsertVisibleFile(response.statementFileId, file);
-        }
-
-        toast.success(
-          statementFileId
-            ? `${file.name}: arquivo reenviado e processado.`
-            : `${file.name}: arquivo enviado e processado.`,
-        );
+        toast.success(`${file.name}: arquivo enviado e processado.`);
         resolve();
       };
 
@@ -260,16 +202,11 @@ export function StatementFilesManager({
 
       const formData = new FormData();
       formData.set("file", file);
-
-      if (statementFileId) {
-        formData.set("statementFileId", statementFileId);
-      }
-
       xhr.send(formData);
     });
   };
 
-  const handleFiles = async (fileList: FileList | null, statementFileId?: string) => {
+  const handleFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) {
       return;
     }
@@ -289,59 +226,15 @@ export function StatementFilesManager({
       fileSize: file.size,
       progress: 0,
       status: "pending" as UploadStatus,
-      statementFileId,
     }));
 
     setUploads((current) => [...queueItems, ...current]);
 
     for (const [index, file] of pdfFiles.entries()) {
-      await uploadSingleFile(file, queueItems[index].id, statementFileId);
+      await uploadSingleFile(file, queueItems[index].id);
     }
 
     startTransition(() => {
-      router.refresh();
-    });
-  };
-
-  const deleteFile = (statementFileId: string, fileName: string) => {
-    startTransition(async () => {
-      const confirmed = window.confirm(
-        `Deseja realmente excluir o arquivo ${fileName}?`,
-      );
-
-      if (!confirmed) {
-        return;
-      }
-
-      const response = await fetch(`/api/statement-files/${statementFileId}`, {
-        method: "DELETE",
-      });
-      const payload = (await response.json()) as { error?: string };
-
-      if (!response.ok || payload.error) {
-        toast.error(payload.error ?? "Falha ao excluir arquivo.");
-        return;
-      }
-
-      toast.success("Arquivo excluido com sucesso.");
-      setVisibleFiles((current) => current.filter((file) => file.id !== statementFileId));
-      router.refresh();
-    });
-  };
-
-  const retryFile = (statementFileId: string) => {
-    startTransition(async () => {
-      const response = await fetch(`/api/statement-files/${statementFileId}/retry`, {
-        method: "POST",
-      });
-      const payload = (await response.json()) as { error?: string };
-
-      if (!response.ok || payload.error) {
-        toast.error(payload.error ?? "Falha ao reprocessar arquivo.");
-        return;
-      }
-
-      toast.success("Reprocessamento iniciado.");
       router.refresh();
     });
   };
@@ -356,17 +249,26 @@ export function StatementFilesManager({
                 Upload de extratos
               </CardTitle>
               <p className="text-sm leading-6 text-muted-foreground">
-                Voce pode enviar varios PDFs de uma unica vez. O sistema coloca
-                todos na fila e mostra qual arquivo esta sendo processado no momento.
+                Esta tela fica focada no envio em lote. Historico de arquivos,
+                retries, reuploads e logs ficam em uma pagina separada para nao
+                poluir a operacao.
               </p>
             </div>
             <div className="text-right text-sm text-muted-foreground">
-              <p>{visibleFiles.length} arquivos registrados</p>
+              <p>{files.length} arquivos registrados</p>
               <p>
                 {uploadSummary.pending} na fila • {uploadSummary.uploading} enviando •{" "}
                 {uploadSummary.processing} processando
               </p>
             </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="outline"
+              render={<Link href={appRouteBuilders.apuracaoArquivos(apuracaoId)} />}
+            >
+              Ver arquivos e logs
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -393,8 +295,7 @@ export function StatementFilesManager({
               Arraste varios PDFs aqui ou clique para selecionar
             </h3>
             <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-              Suporte a multiplos arquivos em lote, retry, exclusao e reenvio.
-              Limite por arquivo: 20 MB.
+              Suporte a multiplos arquivos em lote. Limite por arquivo: 20 MB.
             </p>
             <input
               type="file"
@@ -494,99 +395,6 @@ export function StatementFilesManager({
           ) : null}
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl tracking-tight">
-            Arquivos enviados
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {visibleFiles.length > 0 ? (
-            visibleFiles.map((file) => (
-              <div
-                key={file.id}
-                className="rounded-2xl border border-border/70 bg-background/70 p-4"
-              >
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">{file.originalFileName}</p>
-                      <StatementFileStatusBadge status={file.processingStatus} />
-                    </div>
-                    <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
-                      <span>{formatBytes(file.fileSize)}</span>
-                      <span>
-                        {file.pageCount ? `${file.pageCount} paginas` : "Paginas pendentes"}
-                      </span>
-                      <span>{file.detectedBankName ?? "Banco pendente"}</span>
-                      <span>{file.detectedAccountLabel ?? "Conta pendente"}</span>
-                    </div>
-                    {file.processingError ? (
-                      <p className="text-sm text-destructive">{file.processingError}</p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isPending}
-                      onClick={() => retryFile(file.id)}
-                    >
-                      {isPending ? (
-                        <LoaderCircle className="animate-spin" />
-                      ) : (
-                        <RefreshCcw />
-                      )}
-                      Retry
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isPending}
-                      onClick={() => {
-                        setReuploadTargetId(file.id);
-                        reuploadInputRef.current?.click();
-                      }}
-                    >
-                      <UploadCloud />
-                      Reenviar
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      disabled={isPending}
-                      onClick={() => deleteFile(file.id, file.originalFileName)}
-                    >
-                      <Trash2 />
-                      Excluir
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Nenhum PDF enviado ainda para esta apuracao.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <input
-        ref={reuploadInputRef}
-        type="file"
-        accept="application/pdf"
-        className="hidden"
-        onChange={(event) => {
-          if (reuploadTargetId) {
-            void handleFiles(event.target.files, reuploadTargetId);
-          }
-          event.currentTarget.value = "";
-          setReuploadTargetId(null);
-        }}
-      />
     </div>
   );
 }

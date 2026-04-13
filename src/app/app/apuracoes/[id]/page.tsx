@@ -89,6 +89,13 @@ export default async function ApuracaoDetailPage({ params }: PageProps) {
             <Button
               className="w-full"
               variant="outline"
+              render={<Link href={appRouteBuilders.apuracaoArquivos(apuracao.id)} />}
+            >
+              Ver arquivos e logs
+            </Button>
+            <Button
+              className="w-full"
+              variant="outline"
               render={<Link href={appRouteBuilders.apuracaoReview(apuracao.id)} />}
             >
               Abrir revisao operacional

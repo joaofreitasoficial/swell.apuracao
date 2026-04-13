@@ -19,6 +19,7 @@ export const appRouteBuilders = {
   clientApuracoes: (clientId: string) => `${routes.clients}/${clientId}/apuracoes`,
   apuracao: (apuracaoId: string) => `/app/apuracoes/${apuracaoId}`,
   apuracaoUpload: (apuracaoId: string) => `/app/apuracoes/${apuracaoId}/upload`,
+  apuracaoArquivos: (apuracaoId: string) => `/app/apuracoes/${apuracaoId}/arquivos`,
   apuracaoReview: (apuracaoId: string) => `/app/apuracoes/${apuracaoId}/revisao`,
   apuracaoConsolidado: (apuracaoId: string) =>
     `/app/apuracoes/${apuracaoId}/consolidado`,
