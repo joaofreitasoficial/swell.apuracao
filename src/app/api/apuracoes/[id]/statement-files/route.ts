@@ -32,69 +32,72 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id: apuracaoId } = await params;
-  const user = await getAuthenticatedUserContext();
-
-  if (!user) {
-    return NextResponse.json({ error: "Sessão inválida." }, { status: 401 });
-  }
-
-  if (!user.isActive || user.role !== "user") {
-    return NextResponse.json(
-      { error: "Seu usuário não pode enviar extratos." },
-      { status: 403 },
-    );
-  }
-
-  const formData = await request.formData();
-  const file = formData.get("file");
-  const statementFileId = formData.get("statementFileId");
-
-  if (!(file instanceof File)) {
-    return NextResponse.json(
-      { error: "Selecione um arquivo PDF válido." },
-      { status: 400 },
-    );
-  }
-
-  if (file.type !== "application/pdf") {
-    return NextResponse.json(
-      { error: "Apenas arquivos PDF são permitidos." },
-      { status: 400 },
-    );
-  }
-
-  if (file.size > maxStatementFileSizeInBytes) {
-    return NextResponse.json(
-      { error: "O arquivo excede o limite de 20 MB." },
-      { status: 400 },
-    );
-  }
-
-  const supabase = await createServerSupabaseClient();
-  const { data: apuracao, error: apuracaoError } = await supabase
-    .from("apuracoes")
-    .select("id,user_id,client_id")
-    .eq("id", apuracaoId)
-    .maybeSingle<ApuracaoOwnerRow>();
-
-  if (apuracaoError || !apuracao) {
-    return NextResponse.json(
-      { error: "Apuração não encontrada para upload." },
-      { status: 404 },
-    );
-  }
-
-  const fileBuffer = Buffer.from(await file.arrayBuffer());
-  const storagePath = buildStatementStoragePath({
-    userId: user.id,
-    apuracaoId,
-    fileName: file.name,
-  });
-
-  let oldStoragePath: string | null = null;
+  let storagePathToRollback: string | null = null;
 
   try {
+    const { id: apuracaoId } = await params;
+    const user = await getAuthenticatedUserContext();
+
+    if (!user) {
+      return NextResponse.json({ error: "Sessao invalida." }, { status: 401 });
+    }
+
+    if (!user.isActive || user.role !== "user") {
+      return NextResponse.json(
+        { error: "Seu usuario nao pode enviar extratos." },
+        { status: 403 },
+      );
+    }
+
+    const formData = await request.formData();
+    const file = formData.get("file");
+    const statementFileId = formData.get("statementFileId");
+
+    if (!(file instanceof File)) {
+      return NextResponse.json(
+        { error: "Selecione um arquivo PDF valido." },
+        { status: 400 },
+      );
+    }
+
+    if (file.type !== "application/pdf") {
+      return NextResponse.json(
+        { error: "Apenas arquivos PDF sao permitidos." },
+        { status: 400 },
+      );
+    }
+
+    if (file.size > maxStatementFileSizeInBytes) {
+      return NextResponse.json(
+        { error: "O arquivo excede o limite de 20 MB." },
+        { status: 400 },
+      );
+    }
+
+    const supabase = await createServerSupabaseClient();
+    const { data: apuracao, error: apuracaoError } = await supabase
+      .from("apuracoes")
+      .select("id,user_id,client_id")
+      .eq("id", apuracaoId)
+      .maybeSingle<ApuracaoOwnerRow>();
+
+    if (apuracaoError || !apuracao) {
+      return NextResponse.json(
+        { error: "Apuracao nao encontrada para upload." },
+        { status: 404 },
+      );
+    }
+
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const storagePath = buildStatementStoragePath({
+      userId: user.id,
+      apuracaoId,
+      fileName: file.name,
+    });
+    storagePathToRollback = storagePath;
+
+    let oldStoragePath: string | null = null;
+
     if (typeof statementFileId === "string" && statementFileId) {
       const { data: existingFile, error: existingFileError } = await supabase
         .from("statement_files")
@@ -105,7 +108,7 @@ export async function POST(
 
       if (existingFileError || !existingFile) {
         return NextResponse.json(
-          { error: "Arquivo não encontrado para reenvio." },
+          { error: "Arquivo nao encontrado para reenvio." },
           { status: 404 },
         );
       }
@@ -192,10 +195,12 @@ export async function POST(
       statementFileId: resolvedStatementFileId,
     });
   } catch (error) {
-    try {
-      await removeStatementFileFromStorage(storagePath);
-    } catch {
-      // no-op
+    if (storagePathToRollback) {
+      try {
+        await removeStatementFileFromStorage(storagePathToRollback);
+      } catch {
+        // no-op
+      }
     }
 
     return NextResponse.json(

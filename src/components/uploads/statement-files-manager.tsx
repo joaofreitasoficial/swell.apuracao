@@ -2,7 +2,12 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, RefreshCcw, Trash2, UploadCloud } from "lucide-react";
+import {
+  LoaderCircle,
+  RefreshCcw,
+  Trash2,
+  UploadCloud,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { StatementFileStatusBadge } from "@/components/uploads/statement-file-status-badge";
@@ -10,12 +15,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { StatementFileRecord } from "@/types/domain";
 
+type UploadStatus = "pending" | "uploading" | "processing" | "success" | "error";
+
 type LocalUpload = {
   id: string;
   fileName: string;
+  fileSize: number;
   progress: number;
-  status: "pending" | "uploading" | "success" | "error";
+  status: UploadStatus;
   error?: string;
+  statementFileId?: string;
 };
 
 type StatementFilesManagerProps = {
@@ -35,6 +44,42 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function parseUploadResponse(responseText: string) {
+  try {
+    return JSON.parse(responseText || "{}") as {
+      error?: string;
+      success?: boolean;
+    };
+  } catch {
+    return {
+      error:
+        responseText.includes("<!DOCTYPE") || responseText.includes("<html")
+          ? "O servidor retornou um erro inesperado. Verifique os logs da Vercel."
+          : "Falha ao interpretar a resposta do servidor.",
+    };
+  }
+}
+
+function getUploadStatusLabel(upload: LocalUpload) {
+  if (upload.status === "error") {
+    return upload.error ?? "Falha ao enviar o arquivo.";
+  }
+
+  if (upload.status === "success") {
+    return "Upload e processamento concluidos.";
+  }
+
+  if (upload.status === "processing") {
+    return "Arquivo enviado. Processando extrato agora...";
+  }
+
+  if (upload.status === "uploading") {
+    return "Enviando arquivo para o servidor...";
+  }
+
+  return "Aguardando na fila para envio.";
+}
+
 export function StatementFilesManager({
   apuracaoId,
   files,
@@ -47,24 +92,58 @@ export function StatementFilesManager({
   const [reuploadTargetId, setReuploadTargetId] = useState<string | null>(null);
 
   const uploadSummary = useMemo(() => {
+    const pending = uploads.filter((upload) => upload.status === "pending").length;
     const uploading = uploads.filter((upload) => upload.status === "uploading").length;
+    const processing = uploads.filter((upload) => upload.status === "processing").length;
     const failed = uploads.filter((upload) => upload.status === "error").length;
+    const completed = uploads.filter((upload) => upload.status === "success").length;
 
-    return { uploading, failed };
+    return {
+      total: uploads.length,
+      pending,
+      uploading,
+      processing,
+      failed,
+      completed,
+    };
   }, [uploads]);
 
-  const uploadSingleFile = async (file: File, statementFileId?: string) => {
-    const localId = `${file.name}-${crypto.randomUUID()}`;
+  const currentUpload = useMemo(
+    () =>
+      uploads.find((upload) => upload.status === "processing") ??
+      uploads.find((upload) => upload.status === "uploading") ??
+      uploads.find((upload) => upload.status === "pending") ??
+      null,
+    [uploads],
+  );
 
-    setUploads((current) => [
-      {
-        id: localId,
-        fileName: file.name,
-        progress: 0,
-        status: "pending",
-      },
-      ...current,
-    ]);
+  const batchProgress = useMemo(() => {
+    if (uploadSummary.total === 0) {
+      return 0;
+    }
+
+    return Math.round(
+      ((uploadSummary.completed + uploadSummary.failed) / uploadSummary.total) * 100,
+    );
+  }, [uploadSummary]);
+
+  const updateUpload = (localId: string, updater: (upload: LocalUpload) => LocalUpload) => {
+    setUploads((current) =>
+      current.map((upload) => (upload.id === localId ? updater(upload) : upload)),
+    );
+  };
+
+  const uploadSingleFile = async (
+    file: File,
+    localId: string,
+    statementFileId?: string,
+  ) => {
+    updateUpload(localId, (upload) => ({
+      ...upload,
+      status: "uploading",
+      progress: 0,
+      error: undefined,
+    }));
 
     await new Promise<void>((resolve) => {
       const xhr = new XMLHttpRequest();
@@ -75,70 +154,63 @@ export function StatementFilesManager({
           return;
         }
 
-        const nextProgress = Math.round((event.loaded / event.total) * 100);
-
-        setUploads((current) =>
-          current.map((upload) =>
-            upload.id === localId
-              ? { ...upload, progress: nextProgress, status: "uploading" }
-              : upload,
-          ),
+        const nextProgress = Math.min(
+          100,
+          Math.max(1, Math.round((event.loaded / event.total) * 100)),
         );
+
+        updateUpload(localId, (upload) => ({
+          ...upload,
+          progress: nextProgress,
+          status: "uploading",
+        }));
+      };
+
+      xhr.upload.onload = () => {
+        updateUpload(localId, (upload) => ({
+          ...upload,
+          progress: 100,
+          status: "processing",
+        }));
       };
 
       xhr.onload = () => {
-        const response = JSON.parse(xhr.responseText || "{}") as {
-          error?: string;
-          success?: boolean;
-        };
+        const response = parseUploadResponse(xhr.responseText || "");
 
         if (xhr.status >= 400 || response.error) {
-          setUploads((current) =>
-            current.map((upload) =>
-              upload.id === localId
-                ? {
-                    ...upload,
-                    progress: upload.progress || 0,
-                    status: "error",
-                    error: response.error ?? "Falha ao enviar o arquivo.",
-                  }
-                : upload,
-            ),
-          );
-          toast.error(response.error ?? "Falha ao enviar o arquivo.");
+          updateUpload(localId, (upload) => ({
+            ...upload,
+            status: "error",
+            error: response.error ?? "Falha ao enviar o arquivo.",
+          }));
+          toast.error(`${file.name}: ${response.error ?? "Falha ao enviar o arquivo."}`);
           resolve();
           return;
         }
 
-        setUploads((current) =>
-          current.map((upload) =>
-            upload.id === localId
-              ? { ...upload, progress: 100, status: "success" }
-              : upload,
-          ),
-        );
+        updateUpload(localId, (upload) => ({
+          ...upload,
+          progress: 100,
+          status: "success",
+          statementFileId,
+        }));
+
         toast.success(
           statementFileId
-            ? "Arquivo reenviado e processado."
-            : "Arquivo enviado e processado.",
+            ? `${file.name}: arquivo reenviado e processado.`
+            : `${file.name}: arquivo enviado e processado.`,
         );
         router.refresh();
         resolve();
       };
 
       xhr.onerror = () => {
-        setUploads((current) =>
-          current.map((upload) =>
-            upload.id === localId
-              ? {
-                  ...upload,
-                  status: "error",
-                  error: "Falha de rede durante o upload.",
-                }
-              : upload,
-          ),
-        );
-        toast.error("Falha de rede durante o upload.");
+        updateUpload(localId, (upload) => ({
+          ...upload,
+          status: "error",
+          error: "Falha de rede durante o upload.",
+        }));
+        toast.error(`${file.name}: falha de rede durante o upload.`);
         resolve();
       };
 
@@ -162,8 +234,24 @@ export function StatementFilesManager({
       (file) => file.type === "application/pdf",
     );
 
-    for (const file of pdfFiles) {
-      await uploadSingleFile(file, statementFileId);
+    if (pdfFiles.length === 0) {
+      toast.error("Selecione ao menos um arquivo PDF valido.");
+      return;
+    }
+
+    const queueItems = pdfFiles.map((file) => ({
+      id: `${file.name}-${crypto.randomUUID()}`,
+      fileName: file.name,
+      fileSize: file.size,
+      progress: 0,
+      status: "pending" as UploadStatus,
+      statementFileId,
+    }));
+
+    setUploads((current) => [...queueItems, ...current]);
+
+    for (const [index, file] of pdfFiles.entries()) {
+      await uploadSingleFile(file, queueItems[index].id, statementFileId);
     }
   };
 
@@ -187,7 +275,7 @@ export function StatementFilesManager({
         return;
       }
 
-      toast.success("Arquivo excluído com sucesso.");
+      toast.success("Arquivo excluido com sucesso.");
       router.refresh();
     });
   };
@@ -219,14 +307,15 @@ export function StatementFilesManager({
                 Upload de extratos
               </CardTitle>
               <p className="text-sm leading-6 text-muted-foreground">
-                Envie um ou mais PDFs. O sistema faz a leitura inicial, detecta
-                banco/conta, salva texto bruto e registra logs por arquivo.
+                Voce pode enviar varios PDFs de uma unica vez. O sistema coloca
+                todos na fila e mostra qual arquivo esta sendo processado no momento.
               </p>
             </div>
             <div className="text-right text-sm text-muted-foreground">
               <p>{files.length} arquivos registrados</p>
               <p>
-                {uploadSummary.uploading} enviando • {uploadSummary.failed} com erro
+                {uploadSummary.pending} na fila • {uploadSummary.uploading} enviando •{" "}
+                {uploadSummary.processing} processando
               </p>
             </div>
           </div>
@@ -252,11 +341,11 @@ export function StatementFilesManager({
           >
             <UploadCloud className="size-10 text-primary" />
             <h3 className="mt-4 text-xl font-semibold tracking-tight">
-              Arraste os PDFs aqui ou clique para selecionar
+              Arraste varios PDFs aqui ou clique para selecionar
             </h3>
             <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-              Suporte a múltiplos arquivos, retry, exclusão e reenvio. Limite
-              por arquivo: 20 MB.
+              Suporte a multiplos arquivos em lote, retry, exclusao e reenvio.
+              Limite por arquivo: 20 MB.
             </p>
             <input
               type="file"
@@ -271,35 +360,87 @@ export function StatementFilesManager({
           </label>
 
           {uploads.length > 0 ? (
-            <div className="mt-6 space-y-3">
-              {uploads.map((upload) => (
-                <div
-                  key={upload.id}
-                  className="rounded-2xl border border-border/70 bg-background/70 p-4"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="font-medium">{upload.fileName}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {upload.status === "error"
-                          ? upload.error
-                          : upload.status === "success"
-                            ? "Upload e processamento concluídos."
-                            : "Enviando arquivo..."}
-                      </p>
-                    </div>
-                    <span className="text-sm font-medium">{upload.progress}%</span>
+            <div className="mt-6 space-y-4">
+              <div className="rounded-2xl border bg-card/70 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      Lote em andamento
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {currentUpload
+                        ? currentUpload.status === "processing"
+                          ? `Processando agora: ${currentUpload.fileName}`
+                          : currentUpload.status === "uploading"
+                            ? `Enviando agora: ${currentUpload.fileName}`
+                            : `Proximo da fila: ${currentUpload.fileName}`
+                        : "Nenhum arquivo em processamento no momento"}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {uploadSummary.completed} concluidos • {uploadSummary.failed} com erro •{" "}
+                      {uploadSummary.total} no lote
+                    </p>
                   </div>
-                  <div className="mt-3 h-2 rounded-full bg-muted">
-                    <div
-                      className={`h-2 rounded-full ${
-                        upload.status === "error" ? "bg-destructive" : "bg-primary"
-                      }`}
-                      style={{ width: `${upload.progress}%` }}
-                    />
+                  <div className="min-w-44 text-right">
+                    <p className="text-sm font-medium">{batchProgress}% do lote concluido</p>
+                    <p className="text-xs text-muted-foreground">
+                      {uploadSummary.completed + uploadSummary.failed}/{uploadSummary.total} finalizados
+                    </p>
                   </div>
                 </div>
-              ))}
+                <div className="mt-4 h-2 rounded-full bg-muted">
+                  <div
+                    className="h-2 rounded-full bg-primary transition-all"
+                    style={{ width: `${batchProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {uploads.map((upload) => (
+                  <div
+                    key={upload.id}
+                    className="rounded-2xl border border-border/70 bg-background/70 p-4"
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="font-medium">{upload.fileName}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {formatBytes(upload.fileSize)} • {getUploadStatusLabel(upload)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium">
+                          {upload.status === "processing" ? "Processando" : `${upload.progress}%`}
+                        </p>
+                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          {upload.status}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 h-2 rounded-full bg-muted">
+                      <div
+                        className={`h-2 rounded-full transition-all ${
+                          upload.status === "error"
+                            ? "bg-destructive"
+                            : upload.status === "processing"
+                              ? "animate-pulse bg-amber-500"
+                              : upload.status === "success"
+                                ? "bg-emerald-500"
+                                : "bg-primary"
+                        }`}
+                        style={{
+                          width: `${
+                            upload.status === "processing"
+                              ? 100
+                              : Math.max(4, upload.progress)
+                          }%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
         </CardContent>
@@ -326,7 +467,9 @@ export function StatementFilesManager({
                     </div>
                     <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
                       <span>{formatBytes(file.fileSize)}</span>
-                      <span>{file.pageCount ? `${file.pageCount} páginas` : "Páginas pendentes"}</span>
+                      <span>
+                        {file.pageCount ? `${file.pageCount} paginas` : "Paginas pendentes"}
+                      </span>
                       <span>{file.detectedBankName ?? "Banco pendente"}</span>
                       <span>{file.detectedAccountLabel ?? "Conta pendente"}</span>
                     </div>
@@ -376,7 +519,7 @@ export function StatementFilesManager({
             ))
           ) : (
             <p className="text-sm text-muted-foreground">
-              Nenhum PDF enviado ainda para esta apuração.
+              Nenhum PDF enviado ainda para esta apuracao.
             </p>
           )}
         </CardContent>
