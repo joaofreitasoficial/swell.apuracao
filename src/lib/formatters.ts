@@ -13,6 +13,20 @@ export function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+export function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
+}
+
+export function formatMonthYear(month: number, year: number) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    month: "short",
+    year: "numeric",
+  }).format(new Date(year, month - 1, 1));
+}
+
 export function getApuracaoStatusLabel(status: ApuracaoStatus) {
   const labels: Record<ApuracaoStatus, string> = {
     draft: "Rascunho",

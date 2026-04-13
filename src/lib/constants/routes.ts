@@ -9,6 +9,7 @@ export const routes = {
   newClient: "/app/clientes/novo",
   superAdmin: "/super-admin",
   superAdminUsers: "/super-admin/users",
+  superAdminTemplates: "/super-admin/templates",
 } as const;
 
 export const protectedRoutePrefixes = [routes.app, routes.superAdmin] as const;
@@ -19,4 +20,7 @@ export const appRouteBuilders = {
   apuracao: (apuracaoId: string) => `/app/apuracoes/${apuracaoId}`,
   apuracaoUpload: (apuracaoId: string) => `/app/apuracoes/${apuracaoId}/upload`,
   apuracaoReview: (apuracaoId: string) => `/app/apuracoes/${apuracaoId}/revisao`,
+  apuracaoConsolidado: (apuracaoId: string) =>
+    `/app/apuracoes/${apuracaoId}/consolidado`,
+  apuracaoExcel: (apuracaoId: string) => `/app/apuracoes/${apuracaoId}/excel`,
 } as const;

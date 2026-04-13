@@ -30,6 +30,7 @@ export async function updateTransactionReviewAction(input: unknown) {
 
   revalidatePath(appRouteBuilders.apuracao(result.apuracaoId));
   revalidatePath(appRouteBuilders.apuracaoReview(result.apuracaoId));
+  revalidatePath(appRouteBuilders.apuracaoConsolidado(result.apuracaoId));
 
   return {
     success: "Revisão salva com sucesso.",
@@ -63,6 +64,7 @@ export async function batchTransactionReviewAction(input: unknown) {
   apuracaoIds.forEach((apuracaoId) => {
     revalidatePath(appRouteBuilders.apuracao(apuracaoId));
     revalidatePath(appRouteBuilders.apuracaoReview(apuracaoId));
+    revalidatePath(appRouteBuilders.apuracaoConsolidado(apuracaoId));
   });
 
   return {

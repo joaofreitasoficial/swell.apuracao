@@ -43,7 +43,7 @@ export default async function ApuracaoDetailPage({ params }: PageProps) {
           <Card>
             <CardHeader>
               <CardTitle className="text-xl tracking-tight">
-                Resumo da apuração
+                Resumo da apuracao
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
@@ -64,7 +64,7 @@ export default async function ApuracaoDetailPage({ params }: PageProps) {
                 <p className="font-medium">{apuracao.statementFilesCount ?? 0}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">Transações extraídas</p>
+                <p className="text-muted-foreground">Transacoes extraidas</p>
                 <p className="font-medium">{apuracao.transactionsCount ?? 0}</p>
               </div>
               <div>
@@ -79,7 +79,7 @@ export default async function ApuracaoDetailPage({ params }: PageProps) {
           </Card>
 
           <div className="space-y-3 rounded-3xl border bg-card p-6">
-            <h3 className="text-xl font-semibold tracking-tight">Próximos passos</h3>
+            <h3 className="text-xl font-semibold tracking-tight">Proximos passos</h3>
             <Button
               className="w-full"
               render={<Link href={appRouteBuilders.apuracaoUpload(apuracao.id)} />}
@@ -89,11 +89,34 @@ export default async function ApuracaoDetailPage({ params }: PageProps) {
             <Button
               className="w-full"
               variant="outline"
+              render={<Link href={appRouteBuilders.apuracaoReview(apuracao.id)} />}
+            >
+              Abrir revisao operacional
+            </Button>
+            <Button
+              className="w-full"
+              variant="outline"
+              render={
+                <Link href={appRouteBuilders.apuracaoConsolidado(apuracao.id)} />
+              }
+            >
+              Ver consolidado mensal
+            </Button>
+            <Button
+              className="w-full"
+              variant="outline"
+              render={<Link href={appRouteBuilders.apuracaoExcel(apuracao.id)} />}
+            >
+              Gerar Excel final
+            </Button>
+            <Button
+              className="w-full"
+              variant="outline"
               render={
                 <Link href={appRouteBuilders.clientApuracoes(apuracao.clientId)} />
               }
             >
-              Voltar para lista de apurações
+              Voltar para lista de apuracoes
             </Button>
             <DeleteApuracaoButton
               apuracaoId={apuracao.id}

@@ -177,10 +177,14 @@ export async function POST(
       await removeStatementFileFromStorage(oldStoragePath);
     }
 
-    await enqueueStatementFileProcessing(resolvedStatementFileId);
+    await enqueueStatementFileProcessing(
+      resolvedStatementFileId,
+      typeof statementFileId === "string" && statementFileId ? "reupload" : "upload",
+    );
 
     revalidatePath(appRouteBuilders.apuracao(apuracaoId));
     revalidatePath(appRouteBuilders.apuracaoUpload(apuracaoId));
+    revalidatePath(appRouteBuilders.apuracaoReview(apuracaoId));
     revalidatePath(appRouteBuilders.clientApuracoes(apuracao.client_id));
 
     return NextResponse.json({

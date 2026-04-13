@@ -8,9 +8,15 @@ import type {
   AuditLogRecord,
   ClientRecord,
   DashboardKpis,
+  ExcelTemplateRecord,
   ExclusionReason,
   FileProcessingLogRecord,
+  GeneratedExcelRecord,
   PaginationMeta,
+  ReprocessingDiffSummary,
+  ReprocessingJobRecord,
+  ReprocessingJobStatus,
+  ReprocessingJobTrigger,
   ReviewDecision,
   ReviewableTransactionRecord,
   StatementFileRecord,
@@ -132,6 +138,53 @@ type AuditLogRow = {
   actor_user_id: string | null;
   apuracao_id: string | null;
   payload: Record<string, unknown> | null;
+  created_at: string;
+};
+
+type ReprocessingJobRow = {
+  id: string;
+  apuracao_id: string;
+  statement_file_id: string;
+  trigger_type: ReprocessingJobTrigger;
+  status: ReprocessingJobStatus;
+  inserted_count: number;
+  removed_count: number;
+  preserved_review_count: number;
+  pending_count: number;
+  duplicate_count: number;
+  diff_summary: ReprocessingDiffSummary | null;
+  error_message: string | null;
+  started_at: string;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ExcelTemplateRow = {
+  id: string;
+  uploaded_by: string | null;
+  file_name: string;
+  original_file_name: string;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string;
+  file_size: number;
+  version_number: number;
+  is_active: boolean;
+  mapping_config: ExcelTemplateRecord["mappingConfig"];
+  created_at: string;
+  updated_at: string;
+};
+
+type GeneratedExcelRow = {
+  id: string;
+  apuracao_id: string;
+  template_id: string | null;
+  generated_by: string | null;
+  file_name: string;
+  storage_bucket: string;
+  storage_path: string;
+  template_version: number | null;
   created_at: string;
 };
 
@@ -264,6 +317,59 @@ function mapAuditLog(row: AuditLogRow): AuditLogRecord {
     actorUserId: row.actor_user_id,
     apuracaoId: row.apuracao_id,
     payload: row.payload,
+    createdAt: row.created_at,
+  };
+}
+
+function mapReprocessingJob(row: ReprocessingJobRow): ReprocessingJobRecord {
+  return {
+    id: row.id,
+    apuracaoId: row.apuracao_id,
+    statementFileId: row.statement_file_id,
+    triggerType: row.trigger_type,
+    status: row.status,
+    insertedCount: row.inserted_count,
+    removedCount: row.removed_count,
+    preservedReviewCount: row.preserved_review_count,
+    pendingCount: row.pending_count,
+    duplicateCount: row.duplicate_count,
+    diffSummary: row.diff_summary,
+    errorMessage: row.error_message,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapExcelTemplate(row: ExcelTemplateRow): ExcelTemplateRecord {
+  return {
+    id: row.id,
+    uploadedBy: row.uploaded_by,
+    fileName: row.file_name,
+    originalFileName: row.original_file_name,
+    storageBucket: row.storage_bucket,
+    storagePath: row.storage_path,
+    mimeType: row.mime_type,
+    fileSize: row.file_size,
+    versionNumber: row.version_number,
+    isActive: row.is_active,
+    mappingConfig: row.mapping_config,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapGeneratedExcel(row: GeneratedExcelRow): GeneratedExcelRecord {
+  return {
+    id: row.id,
+    apuracaoId: row.apuracao_id,
+    templateId: row.template_id,
+    generatedBy: row.generated_by,
+    fileName: row.file_name,
+    storageBucket: row.storage_bucket,
+    storagePath: row.storage_path,
+    templateVersion: row.template_version,
     createdAt: row.created_at,
   };
 }
@@ -607,6 +713,27 @@ export async function listFileProcessingLogs(apuracaoId: string) {
   );
 }
 
+export async function listReprocessingJobsByApuracao(apuracaoId: string) {
+  await requireRole("user");
+
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("reprocessing_jobs")
+    .select(
+      "id,apuracao_id,statement_file_id,trigger_type,status,inserted_count,removed_count,preserved_review_count,pending_count,duplicate_count,diff_summary,error_message,started_at,finished_at,created_at,updated_at",
+    )
+    .eq("apuracao_id", apuracaoId)
+    .order("created_at", { ascending: false })
+    .limit(10)
+    .returns<ReprocessingJobRow[]>();
+
+  if (error) {
+    throw new Error(`Falha ao listar jobs de reprocessamento: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapReprocessingJob);
+}
+
 export async function listTransactionsByApuracao(apuracaoId: string) {
   await requireRole("user");
 
@@ -665,4 +792,64 @@ export async function listAuditLogsByApuracao(apuracaoId: string) {
   }
 
   return (data ?? []).map(mapAuditLog);
+}
+
+export async function listExcelTemplates() {
+  await requireRole("super_admin");
+
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("excel_templates")
+    .select(
+      "id,uploaded_by,file_name,original_file_name,storage_bucket,storage_path,mime_type,file_size,version_number,is_active,mapping_config,created_at,updated_at",
+    )
+    .order("version_number", { ascending: false })
+    .returns<ExcelTemplateRow[]>();
+
+  if (error) {
+    throw new Error(`Falha ao listar templates Excel: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapExcelTemplate);
+}
+
+export async function getActiveExcelTemplateForUser() {
+  await requireRole("user");
+
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("excel_templates")
+    .select(
+      "id,uploaded_by,file_name,original_file_name,storage_bucket,storage_path,mime_type,file_size,version_number,is_active,mapping_config,created_at,updated_at",
+    )
+    .eq("is_active", true)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle<ExcelTemplateRow>();
+
+  if (error) {
+    throw new Error(`Falha ao carregar o template Excel ativo: ${error.message}`);
+  }
+
+  return data ? mapExcelTemplate(data) : null;
+}
+
+export async function listGeneratedExcelsByApuracao(apuracaoId: string) {
+  await requireRole("user");
+
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("generated_excels")
+    .select(
+      "id,apuracao_id,template_id,generated_by,file_name,storage_bucket,storage_path,template_version,created_at",
+    )
+    .eq("apuracao_id", apuracaoId)
+    .order("created_at", { ascending: false })
+    .returns<GeneratedExcelRow[]>();
+
+  if (error) {
+    throw new Error(`Falha ao listar arquivos Excel gerados: ${error.message}`);
+  }
+
+  return (data ?? []).map(mapGeneratedExcel);
 }

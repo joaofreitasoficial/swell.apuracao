@@ -43,6 +43,7 @@ export async function PATCH(
 
   revalidatePath(appRouteBuilders.apuracao(apuracaoId));
   revalidatePath(appRouteBuilders.apuracaoReview(apuracaoId));
+  revalidatePath(appRouteBuilders.apuracaoConsolidado(apuracaoId));
 
   return NextResponse.json({
     success: true,
@@ -85,6 +86,7 @@ export async function POST(
 
   revalidatePath(appRouteBuilders.apuracao(apuracaoId));
   revalidatePath(appRouteBuilders.apuracaoReview(apuracaoId));
+  revalidatePath(appRouteBuilders.apuracaoConsolidado(apuracaoId));
 
   return NextResponse.json({
     success: true,

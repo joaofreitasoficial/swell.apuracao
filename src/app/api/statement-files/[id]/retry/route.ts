@@ -60,10 +60,11 @@ export async function POST(
     );
   }
 
-  await enqueueStatementFileProcessing(id);
+  await enqueueStatementFileProcessing(id, "retry");
 
   revalidatePath(appRouteBuilders.apuracao(statementFile.apuracao_id));
   revalidatePath(appRouteBuilders.apuracaoUpload(statementFile.apuracao_id));
+  revalidatePath(appRouteBuilders.apuracaoReview(statementFile.apuracao_id));
 
   return NextResponse.json({ success: true });
 }

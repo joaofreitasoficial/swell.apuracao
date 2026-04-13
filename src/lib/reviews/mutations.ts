@@ -4,7 +4,6 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type {
   ExclusionReason,
   ReviewDecision,
-  ReviewableTransactionRecord,
   TransactionReviewRecord,
 } from "@/types/domain";
 

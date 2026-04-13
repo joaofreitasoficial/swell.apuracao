@@ -8,11 +8,15 @@ import { routes } from "@/lib/constants/routes";
 const navigationItems = [
   {
     href: routes.superAdmin,
-    label: "Visão geral",
+    label: "Visao geral",
   },
   {
     href: routes.superAdminUsers,
-    label: "Usuários",
+    label: "Usuarios",
+  },
+  {
+    href: routes.superAdminTemplates,
+    label: "Templates Excel",
   },
 ];
 
@@ -26,9 +30,9 @@ export default async function SuperAdminLayout({
   return (
     <AppShell areaLabel="Super Admin" navigationItems={navigationItems} user={user}>
       <LayoutHeader
-        eyebrow="Administração"
+        eyebrow="Administracao"
         title="Controle da plataforma"
-        description="Gerencie acessos, segurança e a base inicial do SaaS sem abrir mão da validação server-side."
+        description="Gerencie acessos, templates e a base administrativa do SaaS com validacao server-side."
       />
       {children}
     </AppShell>

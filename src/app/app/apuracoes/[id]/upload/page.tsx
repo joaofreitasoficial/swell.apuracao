@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { TransactionsPreviewTable } from "@/components/operations/transactions-preview-table";
 import { ProcessingLogsList } from "@/components/uploads/processing-logs-list";
+import { ReprocessingJobsList } from "@/components/uploads/reprocessing-jobs-list";
 import { StatementFilesManager } from "@/components/uploads/statement-files-manager";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import { formatDateTime } from "@/lib/formatters";
 import {
   getApuracaoById,
   listFileProcessingLogs,
+  listReprocessingJobsByApuracao,
   listStatementFiles,
   listTransactionsByApuracao,
 } from "@/lib/operations/queries";
@@ -21,10 +23,11 @@ type PageProps = {
 
 export default async function ApuracaoUploadPage({ params }: PageProps) {
   const { id } = await params;
-  const [apuracao, files, logs, transactions] = await Promise.all([
+  const [apuracao, files, logs, jobs, transactions] = await Promise.all([
     getApuracaoById(id),
     listStatementFiles(id),
     listFileProcessingLogs(id),
+    listReprocessingJobsByApuracao(id),
     listTransactionsByApuracao(id),
   ]);
 
@@ -72,6 +75,7 @@ export default async function ApuracaoUploadPage({ params }: PageProps) {
       </div>
 
       <TransactionsPreviewTable transactions={transactions} />
+      <ReprocessingJobsList jobs={jobs} />
       <ProcessingLogsList logs={logs} />
     </div>
   );
