@@ -35,10 +35,7 @@ function getPdfParseConstructor(): PdfParseConstructor {
     return pdfParseConstructor;
   }
 
-  const requiredModule = Function(
-    "runtimeRequire",
-    "return runtimeRequire('pdf-parse/dist/pdf-parse/cjs/index.cjs');",
-  )(require) as {
+  const requiredModule = require("pdf-parse") as {
     PDFParse?: PdfParseConstructor;
   };
 
