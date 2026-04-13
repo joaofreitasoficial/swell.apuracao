@@ -1,6 +1,6 @@
 import "server-only";
 
-import { PDFParse } from "pdf-parse";
+import { createRequire } from "node:module";
 
 import { extractTextWithOcrFromImages } from "@/lib/statements/ocr";
 
@@ -10,7 +10,49 @@ type PdfExtractionResult = {
   ocrUsed: boolean;
 };
 
+type PdfParseInstance = {
+  destroy(): Promise<void>;
+  getInfo(args?: { parsePageInfo?: boolean }): Promise<{ total?: number }>;
+  getText(): Promise<{ text?: string }>;
+  getScreenshot(args: {
+    first: number;
+    scale: number;
+    imageDataUrl: false;
+    imageBuffer: true;
+  }): Promise<{
+    pages?: Array<{ data?: Buffer | Uint8Array | ArrayBuffer | null }>;
+  }>;
+};
+
+type PdfParseConstructor = new (args: { data: Buffer | Uint8Array }) => PdfParseInstance;
+
+const require = createRequire(import.meta.url);
+
+let pdfParseConstructor: PdfParseConstructor | null = null;
+
+function getPdfParseConstructor(): PdfParseConstructor {
+  if (pdfParseConstructor) {
+    return pdfParseConstructor;
+  }
+
+  const modulePath = ["pdf-parse", "dist", "pdf-parse", "cjs", "index.cjs"].join("/");
+  const requiredModule = require(modulePath) as {
+    PDFParse?: PdfParseConstructor;
+  };
+
+  if (!requiredModule.PDFParse) {
+    throw new Error(
+      "Falha ao carregar o parser de PDF no ambiente atual.",
+    );
+  }
+
+  pdfParseConstructor = requiredModule.PDFParse;
+
+  return pdfParseConstructor;
+}
+
 export async function extractPdfData(fileBuffer: Buffer): Promise<PdfExtractionResult> {
+  const PDFParse = getPdfParseConstructor();
   const parser = new PDFParse({ data: fileBuffer });
 
   try {
