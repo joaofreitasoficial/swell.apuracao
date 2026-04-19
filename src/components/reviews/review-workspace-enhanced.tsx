@@ -287,7 +287,7 @@ export function ReviewWorkspaceEnhanced({
   }, [selectedTransactionIds]);
 
   // P1: Usar hook de retry para batch actions
-  const { isRetrying, retryCount, executeWithRetry } = useRetry({
+  const { execute: executeWithRetry } = useRetry({
     maxAttempts: 3,
     initialDelayMs: 1000,
   });
@@ -910,14 +910,7 @@ export function ReviewWorkspaceEnhanced({
                 />
               )}
 
-              {/* P1: Retry Indicator */}
-              {isRetrying && (
-                <RetryIndicator
-                  attemptNumber={retryCount}
-                  maxAttempts={3}
-                  message="Tentando novamente..."
-                />
-              )}
+              {/* P1: Retry Indicator - shown via ActionFeedback */}
 
               {/* Counts */}
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
