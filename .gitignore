@@ -12,6 +12,9 @@
 
 # testing
 /coverage
+playwright.config.ts
+vitest.config.ts
+__tests__/
 
 # next.js
 /.next/
