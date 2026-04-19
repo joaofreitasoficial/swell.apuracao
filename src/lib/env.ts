@@ -20,6 +20,7 @@ const serverEnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: nonEmptyStringSchema,
   FIRST_SUPER_ADMIN_EMAIL: emailStringSchema,
   OPENAI_API_KEY: z.preprocess(trimEnvValue, z.string().min(1)).optional(),
+  GEMINI_API_KEY: z.preprocess(trimEnvValue, z.string().min(1)).optional(),
 });
 
 type SupabaseClientEnv = z.infer<typeof supabaseClientEnvSchema>;
@@ -45,6 +46,7 @@ export function getServerEnv(): ServerEnv {
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     FIRST_SUPER_ADMIN_EMAIL: process.env.FIRST_SUPER_ADMIN_EMAIL,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   });
 
   return cachedServerEnv;
