@@ -84,7 +84,7 @@ export function FilterPresets(options: {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger>
         <Button variant="ghost" size="sm" title="Filtros salvos">
           <Star className="size-4" />
           <span className="hidden sm:inline ml-1">Presets</span>
