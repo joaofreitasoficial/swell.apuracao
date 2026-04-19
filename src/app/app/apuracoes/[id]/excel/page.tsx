@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { appRouteBuilders } from "@/lib/constants/routes";
 import { formatDateTime } from "@/lib/formatters";
 import {
-  getActiveExcelTemplateForUser,
   getApuracaoById,
   listGeneratedExcelsByApuracao,
 } from "@/lib/operations/queries";
@@ -20,25 +19,13 @@ type PageProps = {
 
 export default async function ApuracaoExcelPage({ params }: PageProps) {
   const { id } = await params;
-  const [apuracao, template, generatedExcels] = await Promise.all([
+  const [apuracao, generatedExcels] = await Promise.all([
     getApuracaoById(id),
-    getActiveExcelTemplateForUser(),
     listGeneratedExcelsByApuracao(id),
   ]);
 
   if (!apuracao) {
     notFound();
-  }
-
-  if (!template) {
-    return (
-      <EmptyState
-        title="Nenhum template Excel ativo"
-        description="Peça ao super admin para cadastrar e ativar um modelo antes de gerar o arquivo final desta apuracao."
-        ctaHref={appRouteBuilders.apuracaoConsolidado(id)}
-        ctaLabel="Voltar ao consolidado"
-      />
-    );
   }
 
   return (
@@ -71,7 +58,6 @@ export default async function ApuracaoExcelPage({ params }: PageProps) {
         <div className="space-y-6">
           <GenerateExcelCard
             apuracaoId={apuracao.id}
-            template={template}
             generatedCount={generatedExcels.length}
           />
 

@@ -33,7 +33,7 @@ export function GeneratedExcelsTable({
           <TableHeader>
             <TableRow>
               <TableHead>Arquivo</TableHead>
-              <TableHead>Template</TableHead>
+              <TableHead>Modelo</TableHead>
               <TableHead>Gerado em</TableHead>
               <TableHead className="text-right">Download</TableHead>
             </TableRow>
@@ -46,7 +46,9 @@ export function GeneratedExcelsTable({
                 </TableCell>
                 <TableCell className="align-top">
                   <Badge variant="secondary">
-                    v{generatedExcel.templateVersion ?? "?"}
+                    {generatedExcel.templateVersion
+                      ? `v${generatedExcel.templateVersion}`
+                      : "APURAÇÃO VAZIA"}
                   </Badge>
                 </TableCell>
                 <TableCell className="align-top text-sm text-muted-foreground">

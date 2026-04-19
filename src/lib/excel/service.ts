@@ -1,21 +1,31 @@
 import "server-only";
 
-import ExcelJS from "exceljs";
-
 import { generatedExcelsBucket } from "@/lib/constants/storage";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
   buildGeneratedExcelStoragePath,
-  downloadExcelTemplateFromStorage,
   uploadGeneratedExcelToStorage,
 } from "@/lib/excel/storage";
-import { formatMonthYear } from "@/lib/formatters";
+import {
+  buildApuracaoVaziaFileName,
+  renderApuracaoVazia,
+  type KeptTransaction,
+} from "@/lib/excel/template-renderer";
 import { refreshMonthlySummaries } from "@/lib/summaries/service";
 import type {
   ExcelTemplateMappingConfig,
   ExcelTemplateRecord,
   GeneratedExcelRecord,
 } from "@/types/domain";
+
+type KeptCreditTransactionRow = {
+  id: string;
+  transaction_date: string;
+  amount: number;
+  month_ref: number;
+  year_ref: number;
+  direction: "credit" | "debit";
+};
 
 type ExcelTemplateRow = {
   id: string;
@@ -83,53 +93,6 @@ function mapGeneratedExcel(row: GeneratedExcelRow): GeneratedExcelRecord {
   };
 }
 
-function setCellIfPresent(
-  worksheet: ExcelJS.Worksheet,
-  cellAddress: string | null | undefined,
-  value: string | number,
-) {
-  if (!cellAddress) {
-    return;
-  }
-
-  worksheet.getCell(cellAddress).value = value;
-}
-
-function cloneRowTemplate(worksheet: ExcelJS.Worksheet, fromRowNumber: number, toRowNumber: number) {
-  if (fromRowNumber === toRowNumber) {
-    return;
-  }
-
-  const templateRow = worksheet.getRow(fromRowNumber);
-  const targetRow = worksheet.getRow(toRowNumber);
-
-  targetRow.height = templateRow.height;
-
-  templateRow.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
-    const targetCell = targetRow.getCell(columnNumber);
-    targetCell.style = JSON.parse(JSON.stringify(cell.style));
-    if (typeof cell.value === "object" && cell.value && "formula" in cell.value) {
-      targetCell.value = cell.value;
-    } else if (cell.value === null) {
-      targetCell.value = null;
-    }
-  });
-}
-
-function buildGeneratedFileName(params: { clientName: string; createdAt: Date }) {
-  const normalizedClient = params.clientName
-    .normalize("NFKD")
-    .replace(/[^\w\s-]+/g, "")
-    .trim()
-    .replace(/\s+/g, "_")
-    .toUpperCase();
-  const datePart = `${params.createdAt.getFullYear()}${String(
-    params.createdAt.getMonth() + 1,
-  ).padStart(2, "0")}${String(params.createdAt.getDate()).padStart(2, "0")}`;
-
-  return `APURACAO_${normalizedClient}_${datePart}.xlsx`;
-}
-
 async function getActiveExcelTemplate() {
   const admin = createAdminSupabaseClient();
   const { data, error } = await admin
@@ -166,104 +129,60 @@ async function getApuracaoExcelContext(apuracaoId: string) {
   return data;
 }
 
-function fillTemplateWorksheet(params: {
-  worksheet: ExcelJS.Worksheet;
-  mapping: ExcelTemplateMappingConfig;
-  clientName: string;
-  apuracaoName: string;
-  generatedAt: Date;
-  totalAnnual: number;
-  averageMonthly: number;
-  highestMonthLabel: string;
-  lowestMonthLabel: string;
-  monthlySummaries: Awaited<ReturnType<typeof refreshMonthlySummaries>>["monthlySummaries"];
-}) {
-  const { worksheet, mapping } = params;
+async function loadKeptCreditTransactions(apuracaoId: string): Promise<KeptTransaction[]> {
+  const admin = createAdminSupabaseClient();
+  const { data, error } = await admin
+    .from("transactions")
+    .select(
+      "id,transaction_date,amount,month_ref,year_ref,direction,transaction_reviews!inner(decision)",
+    )
+    .eq("apuracao_id", apuracaoId)
+    .eq("direction", "credit")
+    .eq("transaction_reviews.decision", "manter")
+    .returns<Array<KeptCreditTransactionRow & { transaction_reviews: { decision: string } }>>();
 
-  setCellIfPresent(worksheet, mapping.clientNameCell, params.clientName);
-  setCellIfPresent(worksheet, mapping.apuracaoNameCell, params.apuracaoName);
-  setCellIfPresent(
-    worksheet,
-    mapping.generatedAtCell,
-    params.generatedAt.toLocaleString("pt-BR"),
-  );
-  setCellIfPresent(worksheet, mapping.totalAnnualCell, params.totalAnnual);
-  setCellIfPresent(worksheet, mapping.averageMonthlyCell, params.averageMonthly);
-  setCellIfPresent(worksheet, mapping.highestMonthCell, params.highestMonthLabel);
-  setCellIfPresent(worksheet, mapping.lowestMonthCell, params.lowestMonthLabel);
+  if (error) {
+    throw new Error(`Falha ao carregar transacoes mantidas: ${error.message}`);
+  }
 
-  params.monthlySummaries.forEach((summary, index) => {
-    const rowNumber = mapping.dataStartRow + index;
-    cloneRowTemplate(worksheet, mapping.dataStartRow, rowNumber);
-
-    worksheet.getCell(`${mapping.monthColumn}${rowNumber}`).value = summary.monthRef;
-    worksheet.getCell(`${mapping.yearColumn}${rowNumber}`).value = summary.yearRef;
-    worksheet.getCell(`${mapping.totalColumn}${rowNumber}`).value = summary.totalIncluded;
-    worksheet.getCell(`${mapping.entriesColumn}${rowNumber}`).value = summary.entriesCount;
-  });
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    transactionDate: row.transaction_date,
+    amount: Number(row.amount),
+    monthRef: row.month_ref,
+    yearRef: row.year_ref,
+  }));
 }
 
 export async function generateExcelForApuracao(params: {
   apuracaoId: string;
   generatedBy: string;
 }) {
-  const [template, apuracaoContext, summaryResult] = await Promise.all([
-    getActiveExcelTemplate(),
+  const [apuracaoContext, summaryResult, keptTransactions] = await Promise.all([
     getApuracaoExcelContext(params.apuracaoId),
     refreshMonthlySummaries(params.apuracaoId),
+    loadKeptCreditTransactions(params.apuracaoId),
   ]);
 
-  if (!template) {
-    throw new Error("Nenhum template Excel ativo foi configurado pelo super admin.");
-  }
-
-  if (summaryResult.monthlySummaries.length === 0) {
-    throw new Error("Nao ha entradas aprovadas para gerar o Excel.");
-  }
-
-  const workbook = new ExcelJS.Workbook();
-  const templateBuffer = await downloadExcelTemplateFromStorage(template.storagePath);
-  const templateArrayBuffer = templateBuffer.buffer.slice(
-    templateBuffer.byteOffset,
-    templateBuffer.byteOffset + templateBuffer.byteLength,
-  );
-  await workbook.xlsx.load(templateArrayBuffer);
-
-  const worksheet = workbook.getWorksheet(template.mappingConfig.worksheetName);
-
-  if (!worksheet) {
+  if (keptTransactions.length === 0) {
     throw new Error(
-      `A aba ${template.mappingConfig.worksheetName} nao existe no template ativo.`,
+      "Nao ha entradas de credito mantidas para gerar o Excel. Revise as transacoes antes de exportar.",
     );
   }
 
+  const clientName = apuracaoContext.clients?.full_name ?? apuracaoContext.full_name;
+  const apuracaoName = apuracaoContext.full_name;
   const generatedAt = new Date();
-  fillTemplateWorksheet({
-    worksheet,
-    mapping: template.mappingConfig,
-    clientName: apuracaoContext.clients?.full_name ?? apuracaoContext.full_name,
-    apuracaoName: apuracaoContext.full_name,
+
+  const outputBuffer = await renderApuracaoVazia({
+    clientName,
+    apuracaoName,
     generatedAt,
-    totalAnnual: summaryResult.kpis.totalAnnual,
-    averageMonthly: summaryResult.kpis.averageMonthly,
-    highestMonthLabel: summaryResult.kpis.highestMonth
-      ? formatMonthYear(
-          summaryResult.kpis.highestMonth.monthRef,
-          summaryResult.kpis.highestMonth.yearRef,
-        )
-      : "Sem dados",
-    lowestMonthLabel: summaryResult.kpis.lowestMonth
-      ? formatMonthYear(
-          summaryResult.kpis.lowestMonth.monthRef,
-          summaryResult.kpis.lowestMonth.yearRef,
-        )
-      : "Sem dados",
-    monthlySummaries: summaryResult.monthlySummaries,
+    transactions: keptTransactions,
   });
 
-  const outputBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
-  const fileName = buildGeneratedFileName({
-    clientName: apuracaoContext.clients?.full_name ?? apuracaoContext.full_name,
+  const fileName = buildApuracaoVaziaFileName({
+    clientName,
     createdAt: generatedAt,
   });
   const storagePath = buildGeneratedExcelStoragePath({
@@ -278,17 +197,19 @@ export async function generateExcelForApuracao(params: {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
 
+  const template = await getActiveExcelTemplate();
+
   const admin = createAdminSupabaseClient();
   const { data, error } = await admin
     .from("generated_excels")
     .insert({
       apuracao_id: params.apuracaoId,
-      template_id: template.id,
+      template_id: template?.id ?? null,
       generated_by: params.generatedBy,
       file_name: fileName,
       storage_bucket: generatedExcelsBucket,
       storage_path: storagePath,
-      template_version: template.versionNumber,
+      template_version: template?.versionNumber ?? null,
     })
     .select(
       "id,apuracao_id,template_id,generated_by,file_name,storage_bucket,storage_path,template_version,created_at",
@@ -304,5 +225,7 @@ export async function generateExcelForApuracao(params: {
   return {
     generatedExcel: mapGeneratedExcel(data),
     template,
+    monthsCount: summaryResult.monthlySummaries.length,
+    transactionsCount: keptTransactions.length,
   };
 }

@@ -7,17 +7,14 @@ import { toast } from "sonner";
 import { generateExcelAction } from "@/actions/excel-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ExcelTemplateRecord } from "@/types/domain";
 
 type GenerateExcelCardProps = {
   apuracaoId: string;
-  template: ExcelTemplateRecord;
   generatedCount: number;
 };
 
 export function GenerateExcelCard({
   apuracaoId,
-  template,
   generatedCount,
 }: GenerateExcelCardProps) {
   const router = useRouter();
@@ -33,17 +30,16 @@ export function GenerateExcelCard({
           Gerar arquivo da apuracao
         </CardTitle>
         <p className="text-sm leading-6 text-muted-foreground">
-          O arquivo final usa o template ativo v{template.versionNumber} e
-          preserva o layout do modelo configurado pelo super admin.
+          O arquivo usa o modelo oficial APURAÇÃO VAZIA. Cada mês revisado
+          aparece em uma coluna, com os valores das entradas mantidas.
         </p>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <div className="space-y-1 rounded-2xl border bg-muted/30 p-4">
-          <p className="text-muted-foreground">Template ativo</p>
-          <p className="font-medium">{template.originalFileName}</p>
+          <p className="text-muted-foreground">Modelo de saida</p>
+          <p className="font-medium">APURAÇÃO VAZIA.xlsx</p>
           <p className="text-muted-foreground">
-            Aba {template.mappingConfig.worksheetName} • linha inicial{" "}
-            {template.mappingConfig.dataStartRow}
+            Layout fixo com uma coluna por mês detectado.
           </p>
         </div>
 
@@ -51,7 +47,7 @@ export function GenerateExcelCard({
           <p className="text-muted-foreground">Historico desta apuracao</p>
           <p className="font-medium">{generatedCount} arquivo(s) gerado(s)</p>
           <p className="text-muted-foreground">
-            Cada nova geracao fica salva com versao do template utilizada.
+            Cada nova geracao fica salva com data e download disponivel.
           </p>
         </div>
 
