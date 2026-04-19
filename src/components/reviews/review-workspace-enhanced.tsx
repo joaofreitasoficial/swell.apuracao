@@ -264,10 +264,11 @@ export function ReviewWorkspaceEnhanced({
   // P0: AUTOSAVE INTEGRATION
   // ========================================================================
   const { isSaving: isAutoSaving, lastSavedAt } = useAutoSave({
-    data: { noteDrafts, rowSelection, batchDecision },
-    onSave: async (data) => {
+    key: `review-${apuracaoId}`,
+    value: { noteDrafts, rowSelection, batchDecision },
+    onSave: async (value) => {
       // Salvar rascunhos localmente (sessionStorage)
-      // Implementação: salva em cache para recuperação pós-reload
+      // O hook já salva automaticamente em sessionStorage via sessionStorage.setItem
     },
     debounceMs: 500,
   });
