@@ -294,16 +294,20 @@ export function ReviewWorkspaceEnhanced({
 
   // P1: Integração completa de batch com retry
   const { executeAction: executeBatchWithValidation } = useBatchActionWithRetry({
-    validate: (ids: string[]) => validateBatchSelection(ids),
-    execute: (ids: string[], decision: ReviewDecision, reason: ExclusionReason | null, note: string | null) => {
-      return persistBatchReview({
-        transactionIds: ids,
-        decision,
-        exclusionReason: reason,
-        reviewNote: note || null,
+    onSuccess: () => {
+      setActionFeedback({
+        type: "success",
+        title: "✅ Sucesso",
+        message: `Ações aplicadas com sucesso`,
       });
     },
-    // Callbacks handled by parent component via try/catch
+    onError: (error) => {
+      setActionFeedback({
+        type: "error",
+        title: "❌ Erro",
+        message: error.message,
+      });
+    },
   });
 
   // P1: Persistência de aba ativa
