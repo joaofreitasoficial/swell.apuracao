@@ -303,20 +303,7 @@ export function ReviewWorkspaceEnhanced({
         reviewNote: note || null,
       });
     },
-    onSuccess: (ids) => {
-      setActionFeedback({
-        type: "success",
-        title: "✅ Sucesso",
-        message: `${ids.length} transações atualizadas`,
-      });
-    },
-    onError: (error) => {
-      setActionFeedback({
-        type: "error",
-        title: "❌ Erro",
-        message: error.message,
-      });
-    },
+    // Callbacks handled by parent component via try/catch
   });
 
   // P1: Persistência de aba ativa
