@@ -311,7 +311,7 @@ export function ReviewWorkspaceEnhanced({
   });
 
   // P1: Persistência de aba ativa
-  const { activeTab: persistedTab } = usePersistedTab(activeTab, `review-tab-${apuracaoId}`);
+  // (Já implementado via URL params, usePersistedTab é opcional)
 
   // ========================================================================
   // P3: PERFORMANCE INTEGRATION
