@@ -294,8 +294,8 @@ export function ReviewWorkspaceEnhanced({
 
   // P1: Integração completa de batch com retry
   const { executeAction: executeBatchWithValidation } = useBatchActionWithRetry({
-    validate: (ids) => validateBatchSelection(ids),
-    execute: (ids, decision, reason, note) => {
+    validate: (ids: string[]) => validateBatchSelection(ids),
+    execute: (ids: string[], decision: ReviewDecision, reason: ExclusionReason | null, note: string | null) => {
       return persistBatchReview({
         transactionIds: ids,
         decision,
