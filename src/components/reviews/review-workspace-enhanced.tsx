@@ -72,7 +72,6 @@ import { validateBatchSelection } from "@/lib/validations/batch-actions";
 import { useOptimizedVirtualizer } from "@/hooks/useOptimizedVirtualizer";
 import { useLazyLoad } from "@/hooks/useLazyLoad";
 import { memoize, debounce } from "@/lib/performance/memoization";
-import { PerformanceMonitor } from "@/lib/performance/monitoring";
 
 // ============================================================================
 // P4: UX POLISH IMPORTS
