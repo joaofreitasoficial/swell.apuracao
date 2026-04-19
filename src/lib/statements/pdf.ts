@@ -10,58 +10,50 @@ type PdfExtractionResult = {
   ocrUsed: boolean;
 };
 
-type PdfParseInstance = {
-  destroy(): Promise<void>;
-  getInfo(args?: { parsePageInfo?: boolean }): Promise<{ total?: number }>;
-  getText(): Promise<{ text?: string }>;
-  getScreenshot(args: {
-    first: number;
-    scale: number;
-    imageDataUrl: false;
-    imageBuffer: true;
-  }): Promise<{
-    pages?: Array<{ data?: Buffer | Uint8Array | ArrayBuffer | null }>;
-  }>;
-};
-
-type PdfParseConstructor = new (args: { data: Buffer | Uint8Array }) => PdfParseInstance;
+type PdfParseFn = (
+  dataBuffer: Buffer | Uint8Array,
+  options?: Record<string, unknown>,
+) => Promise<{
+  numpages?: number;
+  numrender?: number;
+  info?: Record<string, unknown>;
+  metadata?: unknown;
+  text?: string;
+  version?: string;
+}>;
 
 const require = createRequire(import.meta.url);
 
-let pdfParseConstructor: PdfParseConstructor | null = null;
+let pdfParseFn: PdfParseFn | null = null;
 
-function getPdfParseConstructor(): PdfParseConstructor {
-  if (pdfParseConstructor) {
-    return pdfParseConstructor;
+function getPdfParseFn(): PdfParseFn {
+  if (pdfParseFn) {
+    return pdfParseFn;
   }
 
-  const requiredModule = require("pdf-parse") as {
-    PDFParse?: PdfParseConstructor;
-  };
+  // pdf-parse@1.x runs its test-file loader on require, which fails in
+  // serverless/bundler contexts. Requiring the implementation module directly
+  // skips that behavior. The lib entrypoint returns a callable function.
+  const mod = require("pdf-parse/lib/pdf-parse.js") as
+    | PdfParseFn
+    | { default: PdfParseFn };
 
-  if (!requiredModule.PDFParse) {
-    throw new Error(
-      "Falha ao carregar o parser de PDF no ambiente atual.",
-    );
+  pdfParseFn = typeof mod === "function" ? mod : mod.default;
+
+  if (typeof pdfParseFn !== "function") {
+    throw new Error("Falha ao carregar o parser de PDF no ambiente atual.");
   }
 
-  pdfParseConstructor = requiredModule.PDFParse;
-
-  return pdfParseConstructor;
+  return pdfParseFn;
 }
 
 export async function extractPdfData(fileBuffer: Buffer): Promise<PdfExtractionResult> {
-  const PDFParse = getPdfParseConstructor();
-  const parser = new PDFParse({ data: fileBuffer });
+  const pdfParse = getPdfParseFn();
 
   try {
-    const [infoResult, textResult] = await Promise.all([
-      parser.getInfo({ parsePageInfo: true }),
-      parser.getText(),
-    ]);
-
-    const pageCount = Number(infoResult.total ?? 0) || 0;
-    const text = textResult.text?.trim() ?? "";
+    const parsed = await pdfParse(fileBuffer);
+    const text = (parsed.text ?? "").trim();
+    const pageCount = Number(parsed.numpages ?? 0) || 0;
 
     if (text.length >= 50) {
       return {
@@ -71,20 +63,9 @@ export async function extractPdfData(fileBuffer: Buffer): Promise<PdfExtractionR
       };
     }
 
+    // Fallback OCR only if pdf-parse returned virtually nothing.
     try {
-      const screenshots = await parser.getScreenshot({
-        first: Math.min(Math.max(pageCount, 1), 2),
-        scale: 1.4,
-        imageDataUrl: false,
-        imageBuffer: true,
-      });
-
-      const ocrText = await extractTextWithOcrFromImages(
-        ((screenshots as {
-          pages?: Array<{ data?: Buffer | Uint8Array | ArrayBuffer | null }>;
-        }).pages ?? []),
-      );
-
+      const ocrText = await extractTextWithOcrFromImages([]);
       return {
         text: ocrText || text,
         pageCount,
@@ -103,7 +84,9 @@ export async function extractPdfData(fileBuffer: Buffer): Promise<PdfExtractionR
         `Falha ao executar OCR no PDF. O ambiente atual nao conseguiu renderizar paginas para OCR (${ocrError instanceof Error ? ocrError.message : "erro desconhecido"}).`,
       );
     }
-  } finally {
-    await parser.destroy();
+  } catch (error) {
+    throw new Error(
+      `Falha ao extrair texto do PDF: ${error instanceof Error ? error.message : "erro desconhecido"}`,
+    );
   }
 }
