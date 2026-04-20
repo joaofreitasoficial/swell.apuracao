@@ -399,6 +399,7 @@ function isReviewWorkspaceTab(value: string): value is ReviewWorkspaceTab {
     value === "pendentes" ||
     value === "mantidas" ||
     value === "excluidas" ||
+    value === "meses" ||
     value === "consolidado" ||
     value === "logs"
   );
@@ -1065,6 +1066,77 @@ export async function getActiveExcelTemplateForUser() {
   }
 
   return data ? mapExcelTemplate(data) : null;
+}
+
+export type MonthlyCreditBucket = {
+  monthRef: number;
+  yearRef: number;
+  keptTotal: number;
+  keptCount: number;
+  pendingCount: number;
+  excludedCount: number;
+  transactions: ReviewableTransactionRecord[];
+};
+
+export async function listCreditsByMonthForApuracao(
+  apuracaoId: string,
+): Promise<MonthlyCreditBucket[]> {
+  await requireRole("user");
+
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("transactions")
+    .select(
+      "id,apuracao_id,statement_file_id,bank_name,account_label,transaction_date,description,amount,direction,month_ref,year_ref,extraction_confidence,original_text,transaction_hash,is_duplicate,created_at,updated_at,transaction_reviews!inner(id,transaction_id,decision,exclusion_reason,review_note,reviewed_by,reviewed_at,created_at,updated_at)",
+    )
+    .eq("apuracao_id", apuracaoId)
+    .eq("direction", "credit")
+    .order("year_ref", { ascending: true })
+    .order("month_ref", { ascending: true })
+    .order("transaction_date", { ascending: true })
+    .returns<TransactionRow[]>();
+
+  if (error) {
+    throw new Error(`Falha ao listar créditos por mês: ${error.message}`);
+  }
+
+  const rows = (data ?? []).map(mapReviewableTransaction);
+  const buckets = new Map<string, MonthlyCreditBucket>();
+
+  for (const row of rows) {
+    const key = `${row.yearRef}-${String(row.monthRef).padStart(2, "0")}`;
+    let bucket = buckets.get(key);
+
+    if (!bucket) {
+      bucket = {
+        monthRef: row.monthRef,
+        yearRef: row.yearRef,
+        keptTotal: 0,
+        keptCount: 0,
+        pendingCount: 0,
+        excludedCount: 0,
+        transactions: [],
+      };
+      buckets.set(key, bucket);
+    }
+
+    bucket.transactions.push(row);
+
+    const decision = row.review?.decision ?? "pendente";
+
+    if (decision === "manter") {
+      bucket.keptTotal += Number(row.amount);
+      bucket.keptCount += 1;
+    } else if (decision === "excluir") {
+      bucket.excludedCount += 1;
+    } else {
+      bucket.pendingCount += 1;
+    }
+  }
+
+  return Array.from(buckets.keys())
+    .sort()
+    .map((key) => buckets.get(key)!);
 }
 
 export async function listGeneratedExcelsByApuracao(apuracaoId: string) {

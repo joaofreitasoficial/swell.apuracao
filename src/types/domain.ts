@@ -286,6 +286,7 @@ export const reviewWorkspaceTabs = [
   "pendentes",
   "mantidas",
   "excluidas",
+  "meses",
   "consolidado",
   "logs",
 ] as const;

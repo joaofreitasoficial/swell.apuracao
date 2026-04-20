@@ -14,13 +14,12 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  CheckCircle2,
-  CircleSlash,
   FileSpreadsheet,
-  Files,
+  Filter,
   History,
   LoaderCircle,
-  Rows3,
+  Undo2,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -34,21 +33,19 @@ import {
 import { toast } from "sonner";
 
 import { ReviewConsolidatedTab } from "@/components/reviews/review-consolidated-tab";
-import { ReviewDecisionBadge } from "@/components/reviews/review-decision-badge";
 import { ReviewLogsDrawer } from "@/components/reviews/review-logs-drawer";
+import { ReviewMonthsTab } from "@/components/reviews/review-months-tab";
 import {
   exclusionReasonOptions,
-  getExclusionReasonLabel,
   getMonthYearLabel,
 } from "@/components/reviews/review-labels";
-import { ReviewSidebar } from "@/components/reviews/review-sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { appRouteBuilders } from "@/lib/constants/routes";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
+import type { MonthlyCreditBucket } from "@/lib/operations/queries";
 import type {
   AuditLogRecord,
   ConsolidatedKpis,
@@ -67,10 +64,11 @@ import type {
 
 const columnHelper = createColumnHelper<ReviewableTransactionRecord>();
 const gridTemplateColumns =
-  "52px 120px minmax(340px,2.3fr) 150px 150px 130px 150px 180px minmax(220px,1.2fr)";
-const rowHeight = 84;
-const nativeSelectClassName =
-  "h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "44px 104px minmax(320px,1fr) 132px 220px";
+const rowHeight = 58;
+
+const inlineSelectClass =
+  "h-9 rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 type ReviewSnapshot = {
   transactionId: string;
@@ -102,6 +100,7 @@ type ReviewWorkspaceProps = {
         latestSnapshotReferenceKey: string;
       }
     | null;
+  monthlyBuckets: MonthlyCreditBucket[] | null;
 };
 
 function getSortIcon(direction: false | "asc" | "desc") {
@@ -171,6 +170,7 @@ export function ReviewWorkspace({
   pagination,
   auditLogs,
   consolidated,
+  monthlyBuckets,
 }: ReviewWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -182,7 +182,6 @@ export function ReviewWorkspace({
     { id: "transactionDate", desc: true },
   ]);
   const [savingIds, setSavingIds] = useState<Record<string, boolean>>({});
-  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [lastAction, setLastAction] = useState<UndoAction | null>(null);
   const [focusedTransactionId, setFocusedTransactionId] = useState<string | null>(null);
   const [query, setQuery] = useState(initialFilters.query);
@@ -194,12 +193,11 @@ export function ReviewWorkspace({
   const [duplicate, setDuplicate] = useState<ReviewWorkspaceDuplicateFilter>(
     initialFilters.duplicate,
   );
-  const [batchDecision, setBatchDecision] = useState<ReviewDecision>("manter");
-  const [batchReason, setBatchReason] = useState<"" | ExclusionReason>("");
-  const [batchNote, setBatchNote] = useState("");
   const [logsOpen, setLogsOpen] = useState(activeTab === "logs");
   const [isApplyingBatch, startBatchTransition] = useTransition();
   const [isUndoing, startUndoTransition] = useTransition();
+  const [batchReason, setBatchReason] =
+    useState<"" | ExclusionReason>("");
 
   const selectedTransactionIds = Object.entries(rowSelection)
     .filter(([, selected]) => Boolean(selected))
@@ -302,7 +300,6 @@ export function ReviewWorkspace({
   useEffect(() => {
     setTransactions(initialTransactions);
     setRowSelection({});
-    setNoteDrafts({});
   }, [initialTransactions]);
 
   useEffect(() => {
@@ -414,7 +411,6 @@ export function ReviewWorkspace({
     try {
       const review = await persistSingleReview(params.nextSnapshot);
       syncServerReview(review);
-      toast.success(params.successMessage);
     } catch (error) {
       applySnapshotsLocally([params.previousSnapshot]);
       toast.error(
@@ -433,6 +429,11 @@ export function ReviewWorkspace({
     }
 
     const previousSnapshot = getSnapshot(transaction);
+
+    if (previousSnapshot.decision === decision) {
+      return;
+    }
+
     const nextSnapshot: ReviewSnapshot = {
       transactionId,
       decision,
@@ -449,81 +450,9 @@ export function ReviewWorkspace({
     });
   }
 
-  function handleReasonChange(
-    transactionId: string,
-    exclusionReason: ExclusionReason | null,
-  ) {
-    const transaction = findTransaction(transactionId);
-
-    if (!transaction) {
-      return;
-    }
-
-    const previousSnapshot = getSnapshot(transaction);
-    const nextSnapshot: ReviewSnapshot = {
-      ...previousSnapshot,
-      exclusionReason,
-      decision:
-        previousSnapshot.decision === "pendente"
-          ? "excluir"
-          : previousSnapshot.decision,
-    };
-
-    void applySingleAction({
-      transactionId,
-      nextSnapshot,
-      previousSnapshot,
-      successMessage: "Motivo atualizado.",
-    });
-  }
-
-  function commitNoteEdit(transactionId: string) {
-    const transaction = findTransaction(transactionId);
-
-    if (!transaction) {
-      return;
-    }
-
-    const draft = noteDrafts[transactionId];
-
-    if (typeof draft !== "string") {
-      return;
-    }
-
-    const previousSnapshot = getSnapshot(transaction);
-    const normalizedDraft = normalizeReviewNote(draft);
-
-    if (normalizedDraft === previousSnapshot.reviewNote) {
-      setNoteDrafts((current) => {
-        const next = { ...current };
-        delete next[transactionId];
-        return next;
-      });
-      return;
-    }
-
-    const nextSnapshot: ReviewSnapshot = {
-      ...previousSnapshot,
-      reviewNote: normalizedDraft,
-    };
-
-    setNoteDrafts((current) => {
-      const next = { ...current };
-      delete next[transactionId];
-      return next;
-    });
-
-    void applySingleAction({
-      transactionId,
-      nextSnapshot,
-      previousSnapshot,
-      successMessage: "Observacao salva.",
-    });
-  }
-
-  function handleBatchApply() {
+  function applyBatchDecision(decision: ReviewDecision) {
     if (selectedTransactionIds.length === 0) {
-      toast.error("Selecione pelo menos uma linha para aplicar em lote.");
+      toast.error("Selecione ao menos uma linha.");
       return;
     }
 
@@ -537,9 +466,9 @@ export function ReviewWorkspace({
 
       const nextSnapshots = previousSnapshots.map((snapshot) => ({
         ...snapshot,
-        decision: batchDecision,
-        exclusionReason: batchDecision === "excluir" ? batchReason || null : null,
-        reviewNote: normalizeReviewNote(batchNote),
+        decision,
+        exclusionReason:
+          decision === "excluir" ? batchReason || null : null,
       }));
 
       applySnapshotsLocally(nextSnapshots);
@@ -552,12 +481,12 @@ export function ReviewWorkspace({
       try {
         await persistBatchReview({
           transactionIds: selectedTransactionIds,
-          decision: batchDecision,
-          exclusionReason: batchDecision === "excluir" ? batchReason || null : null,
-          reviewNote: normalizeReviewNote(batchNote),
+          decision,
+          exclusionReason: decision === "excluir" ? batchReason || null : null,
+          reviewNote: null,
         });
-        toast.success("Acao em lote aplicada com sucesso.");
-        setBatchNote("");
+        toast.success(`${previousSnapshots.length} linhas atualizadas.`);
+        setRowSelection({});
       } catch (error) {
         applySnapshotsLocally(previousSnapshots);
         toast.error(
@@ -674,7 +603,7 @@ export function ReviewWorkspace({
           exclusionReason: decision === "excluir" ? batchReason || null : null,
           reviewNote: null,
         });
-        toast.success("Atalho aplicado com sucesso.");
+        toast.success("Atalho aplicado.");
       } catch (error) {
         applySnapshotsLocally(previousSnapshots);
         toast.error(
@@ -698,39 +627,39 @@ export function ReviewWorkspace({
       id: "select",
       enableSorting: false,
       header: ({ table }) => (
-        <div className="flex items-center justify-center">
-          <input
-            aria-label="Selecionar linhas da pagina"
-            type="checkbox"
-            checked={table.getIsAllRowsSelected()}
-            ref={(element) => {
-              if (element) {
-                element.indeterminate = table.getIsSomeRowsSelected();
-              }
-            }}
-            onChange={table.getToggleAllRowsSelectedHandler()}
-          />
-        </div>
+        <input
+          aria-label="Selecionar pagina"
+          type="checkbox"
+          className="size-4"
+          checked={table.getIsAllRowsSelected()}
+          ref={(element) => {
+            if (element) {
+              element.indeterminate = table.getIsSomeRowsSelected();
+            }
+          }}
+          onChange={table.getToggleAllRowsSelectedHandler()}
+        />
       ),
       cell: ({ row }) => (
-        <div className="flex items-center justify-center">
-          <input
-            aria-label={`Selecionar transacao ${row.original.description}`}
-            type="checkbox"
-            checked={row.getIsSelected()}
-            onChange={row.getToggleSelectedHandler()}
-            onClick={(event) => event.stopPropagation()}
-          />
-        </div>
+        <input
+          aria-label="Selecionar linha"
+          type="checkbox"
+          className="size-4"
+          checked={row.getIsSelected()}
+          onChange={row.getToggleSelectedHandler()}
+          onClick={(event) => event.stopPropagation()}
+        />
       ),
     }),
     columnHelper.accessor("transactionDate", {
       id: "transactionDate",
       header: "Data",
       cell: ({ row }) => (
-        <div className="space-y-1">
-          <p className="font-medium">{formatDate(row.original.transactionDate)}</p>
-          <p className="text-xs text-muted-foreground">
+        <div className="leading-tight">
+          <p className="text-sm font-medium">
+            {formatDate(row.original.transactionDate)}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
             {getMonthYearLabel(row.original.monthRef, row.original.yearRef)}
           </p>
         </div>
@@ -740,140 +669,80 @@ export function ReviewWorkspace({
       id: "description",
       header: "Descricao",
       cell: ({ row }) => (
-        <div className="space-y-2">
-          <p className="line-clamp-2 whitespace-normal font-medium">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="line-clamp-1 text-sm font-medium" title={row.original.description}>
             {row.original.description}
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant={row.original.direction === "credit" ? "default" : "outline"}>
-              {row.original.direction === "credit" ? "Credito" : "Debito"}
-            </Badge>
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="truncate">{row.original.bankName}</span>
             {row.original.isDuplicate ? (
-              <Badge variant="destructive">Duplicada</Badge>
+              <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
+                Duplicada
+              </Badge>
             ) : null}
-            <Badge variant="secondary">
-              {Math.round(row.original.extractionConfidence * 100)}% IA
-            </Badge>
           </div>
         </div>
       ),
     }),
-    columnHelper.accessor("bankName", {
-      id: "bankName",
-      header: "Banco",
-      cell: ({ row }) => row.original.bankName,
-    }),
-    columnHelper.accessor("accountLabel", {
-      id: "accountLabel",
-      header: "Conta",
-      cell: ({ row }) => row.original.accountLabel ?? "Nao identificado",
-    }),
     columnHelper.accessor("amount", {
       id: "amount",
       header: "Valor",
-      cell: ({ row }) => (
-        <span className="font-medium">{formatCurrency(row.original.amount)}</span>
-      ),
-    }),
-    columnHelper.display({
-      id: "decision",
-      header: "Status",
       cell: ({ row }) => {
-        const decision = row.original.review?.decision ?? "pendente";
-        const isSaving = Boolean(savingIds[row.original.id]);
-
+        const isCredit = row.original.direction === "credit";
         return (
-          <div className="space-y-2">
-            <select
-              className={nativeSelectClassName}
-              value={decision}
-              onClick={(event) => event.stopPropagation()}
-              onChange={(event) =>
-                handleDecisionChange(
-                  row.original.id,
-                  event.target.value as ReviewDecision,
-                )
-              }
+          <div className="text-right">
+            <p
+              className={cn(
+                "text-sm font-semibold tabular-nums",
+                isCredit ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground",
+              )}
             >
-              <option value="manter">Manter</option>
-              <option value="excluir">Excluir</option>
-              <option value="pendente">Pendente</option>
-            </select>
-
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <ReviewDecisionBadge decision={decision} />
-              {isSaving ? <LoaderCircle className="size-3 animate-spin" /> : null}
-            </div>
-          </div>
-        );
-      },
-    }),
-    columnHelper.display({
-      id: "exclusionReason",
-      header: "Motivo",
-      cell: ({ row }) => {
-        const decision = row.original.review?.decision ?? "pendente";
-        const exclusionReason = row.original.review?.exclusionReason ?? "";
-
-        return (
-          <div className="space-y-2">
-            <select
-              className={nativeSelectClassName}
-              value={exclusionReason}
-              disabled={decision !== "excluir"}
-              onClick={(event) => event.stopPropagation()}
-              onChange={(event) =>
-                handleReasonChange(
-                  row.original.id,
-                  (event.target.value || null) as ExclusionReason | null,
-                )
-              }
-            >
-              <option value="">Sem motivo</option>
-              {exclusionReasonOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-
-            <p className="text-xs text-muted-foreground">
-              {decision === "excluir"
-                ? getExclusionReasonLabel(
-                    row.original.review?.exclusionReason ?? null,
-                  )
-                : "Disponivel apenas para linhas excluidas."}
+              {isCredit ? "+" : "-"}{formatCurrency(row.original.amount)}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {isCredit ? "Entrada" : "Saida"}
             </p>
           </div>
         );
       },
     }),
     columnHelper.display({
-      id: "reviewNote",
-      header: "Observacao",
+      id: "decision",
+      header: "Decisao",
       cell: ({ row }) => {
-        const draftValue =
-          noteDrafts[row.original.id] ?? row.original.review?.reviewNote ?? "";
+        const decision = row.original.review?.decision ?? "pendente";
+        const isSaving = Boolean(savingIds[row.original.id]);
 
         return (
-          <Input
-            value={draftValue}
-            placeholder="Justificativa operacional"
+          <div
+            className="flex items-center gap-1"
             onClick={(event) => event.stopPropagation()}
-            onChange={(event) =>
-              setNoteDrafts((current) => ({
-                ...current,
-                [row.original.id]: event.target.value,
-              }))
-            }
-            onBlur={() => commitNoteEdit(row.original.id)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                commitNoteEdit(row.original.id);
-              }
-            }}
-          />
+          >
+            <DecisionPill
+              label="Manter"
+              active={decision === "manter"}
+              tone="success"
+              disabled={isSaving}
+              onClick={() => handleDecisionChange(row.original.id, "manter")}
+            />
+            <DecisionPill
+              label="Excluir"
+              active={decision === "excluir"}
+              tone="danger"
+              disabled={isSaving}
+              onClick={() => handleDecisionChange(row.original.id, "excluir")}
+            />
+            <DecisionPill
+              label="?"
+              active={decision === "pendente"}
+              tone="neutral"
+              disabled={isSaving}
+              onClick={() => handleDecisionChange(row.original.id, "pendente")}
+            />
+            {isSaving ? (
+              <LoaderCircle className="ml-1 size-3 animate-spin text-muted-foreground" />
+            ) : null}
+          </div>
         );
       },
     }),
@@ -902,37 +771,6 @@ export function ReviewWorkspace({
     overscan: 10,
   });
 
-  function getPinnedStyles(columnId: string, isHeader = false) {
-    if (columnId === "select") {
-      return {
-        className: cn(
-          "sticky left-0 z-10",
-          isHeader ? "bg-card/95" : "bg-card",
-        ),
-        style: {
-          left: 0,
-        },
-      };
-    }
-
-    if (columnId === "transactionDate") {
-      return {
-        className: cn(
-          "sticky z-10 border-r border-border/70",
-          isHeader ? "bg-card/95" : "bg-card",
-        ),
-        style: {
-          left: "52px",
-        },
-      };
-    }
-
-    return {
-      className: "",
-      style: {},
-    };
-  }
-
   const tabItems: Array<{
     id: ReviewWorkspaceTab;
     label: string;
@@ -941,9 +779,22 @@ export function ReviewWorkspace({
     { id: "pendentes", label: "Pendentes", count: counts.pendentes },
     { id: "mantidas", label: "Mantidas", count: counts.mantidas },
     { id: "excluidas", label: "Excluidas", count: counts.excluidas },
+    { id: "meses", label: "Por mes" },
     { id: "consolidado", label: "Consolidado" },
     { id: "logs", label: "Logs" },
   ];
+
+  const hasActiveFilter =
+    query.trim() !== "" ||
+    month !== null ||
+    year !== null ||
+    direction !== "all" ||
+    duplicate !== "all";
+
+  const showGrid =
+    activeTab !== "consolidado" &&
+    activeTab !== "logs" &&
+    activeTab !== "meses";
 
   return (
     <>
@@ -953,114 +804,82 @@ export function ReviewWorkspace({
         onOpenChange={setLogsOpen}
       />
 
-      <div className="space-y-6">
-        <div className="sticky top-4 z-30 space-y-4">
-          <Card className="border-border/70 bg-card/95 shadow-sm backdrop-blur">
-            <CardContent className="space-y-5 p-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                    Revisao premium
-                  </p>
-                  <div>
-                    <h1 className="text-3xl font-semibold tracking-tight">
-                      Alta produtividade para decidir entrada por entrada
-                    </h1>
-                    <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                      {apuracaoName}
-                      {clientName ? ` • ${clientName}` : ""}. Use a pagina por lotes,
-                      com filtros persistidos, atalhos e auditoria lateral para
-                      revisar milhares de linhas sem inflar a tela.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    render={<Link href={appRouteBuilders.apuracaoUpload(apuracaoId)} />}
-                  >
-                    <Files className="size-4" />
-                    PDFs
-                  </Button>
-                  <Button variant="outline" onClick={() => setLogsOpen(true)}>
-                    <History className="size-4" />
-                    Logs
-                  </Button>
-                  <Button
-                    render={<Link href={appRouteBuilders.apuracaoExcel(apuracaoId)} />}
-                  >
-                    <FileSpreadsheet className="size-4" />
-                    Excel
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                <div className="rounded-2xl border border-border/70 bg-background/60 p-4">
-                  <p className="text-sm text-muted-foreground">Total estruturado</p>
-                  <p className="mt-2 text-3xl font-semibold">{counts.total}</p>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/60 p-4">
-                  <p className="text-sm text-muted-foreground">Pendentes</p>
-                  <p className="mt-2 text-3xl font-semibold text-muted-foreground">
-                    {counts.pendentes}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/60 p-4">
-                  <p className="text-sm text-muted-foreground">Mantidas</p>
-                  <p className="mt-2 text-3xl font-semibold text-primary">
-                    {counts.mantidas}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/60 p-4">
-                  <p className="text-sm text-muted-foreground">Excluidas</p>
-                  <p className="mt-2 text-3xl font-semibold text-destructive">
-                    {counts.excluidas}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/60 p-4">
-                  <p className="text-sm text-muted-foreground">Pagina atual</p>
-                  <p className="mt-2 text-3xl font-semibold">
-                    {pagination?.page ?? 1}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="flex flex-wrap gap-2">
-            {tabItems.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => openTab(tab.id)}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-medium transition-colors",
-                  activeTab === tab.id
-                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                    : "border-border/70 bg-card/90 text-foreground hover:border-primary/40",
-                )}
-              >
-                {tab.label}
-                {typeof tab.count === "number" ? (
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-xs",
-                      activeTab === tab.id
-                        ? "bg-primary-foreground/15 text-primary-foreground"
-                        : "bg-muted text-muted-foreground",
-                    )}
-                  >
-                    {tab.count}
-                  </span>
-                ) : null}
-              </button>
-            ))}
+      <div className="flex flex-1 flex-col gap-4 pb-24">
+        {/* COMPACT HEADER */}
+        <header className="flex flex-col gap-3 border-b pb-3 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold tracking-tight">
+              Revisao • {apuracaoName}
+            </h1>
+            <p className="truncate text-xs text-muted-foreground">
+              {clientName ?? "Sem cliente vinculado"}
+            </p>
           </div>
+
+          <div className="flex items-center gap-4">
+            <KpiInline label="Total" value={counts.total} tone="default" />
+            <KpiInline label="Pendentes" value={counts.pendentes} tone="muted" />
+            <KpiInline label="Mantidas" value={counts.mantidas} tone="success" />
+            <KpiInline label="Excluidas" value={counts.excluidas} tone="danger" />
+
+            <div className="ml-4 flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setLogsOpen(true)}
+              >
+                <History className="size-4" />
+                Logs
+              </Button>
+              <Button
+                size="sm"
+                render={<Link href={appRouteBuilders.apuracaoExcel(apuracaoId)} />}
+              >
+                <FileSpreadsheet className="size-4" />
+                Excel
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        {/* TABS */}
+        <div className="flex flex-wrap items-center gap-1 border-b pb-2">
+          {tabItems.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => openTab(tab.id)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                activeTab === tab.id
+                  ? "bg-primary/10 text-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              {tab.label}
+              {typeof tab.count === "number" ? (
+                <span
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 text-[11px] tabular-nums",
+                    activeTab === tab.id
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {tab.count}
+                </span>
+              ) : null}
+            </button>
+          ))}
         </div>
 
-        {activeTab === "consolidado" ? (
+        {/* CONTENT */}
+        {activeTab === "meses" ? (
+          <ReviewMonthsTab
+            apuracaoId={apuracaoId}
+            buckets={monthlyBuckets ?? []}
+          />
+        ) : activeTab === "consolidado" ? (
           consolidated ? (
             <ReviewConsolidatedTab
               monthlySummaries={consolidated.monthlySummaries}
@@ -1068,222 +887,380 @@ export function ReviewWorkspace({
               snapshotReferenceKey={consolidated.latestSnapshotReferenceKey}
             />
           ) : (
-            <Card className="border-border/70 bg-card/90">
-              <CardContent className="flex min-h-64 items-center justify-center text-center text-sm text-muted-foreground">
-                Nenhum consolidado disponivel ainda. Aprove as entradas na revisao
-                para preencher esta aba.
-              </CardContent>
-            </Card>
+            <div className="rounded-xl border bg-card/60 p-8 text-center text-sm text-muted-foreground">
+              Nenhum consolidado disponivel ainda. Aprove as entradas na revisao
+              para preencher esta aba.
+            </div>
           )
         ) : activeTab === "logs" ? (
-          <Card className="border-border/70 bg-card/90">
-            <CardContent className="flex min-h-64 flex-col items-center justify-center gap-4 text-center">
-              <Rows3 className="size-8 text-primary" />
-              <div className="space-y-2">
-                <h2 className="text-2xl font-semibold tracking-tight">
-                  Auditoria em drawer lateral
-                </h2>
-                <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                  Os logs ficam fora da grade principal para preservar foco operacional.
-                  Abra o drawer lateral para acompanhar as acoes recentes sem esticar
-                  a tela inteira.
-                </p>
-              </div>
-              <Button onClick={() => setLogsOpen(true)}>
-                <History className="size-4" />
-                Abrir logs agora
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-center justify-center gap-3 rounded-xl border bg-card/60 p-10 text-center">
+            <History className="size-6 text-primary" />
+            <p className="text-sm text-muted-foreground">
+              Os logs abrem em drawer lateral para nao poluir a revisao.
+            </p>
+            <Button size="sm" onClick={() => setLogsOpen(true)}>
+              Abrir logs
+            </Button>
+          </div>
         ) : (
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="space-y-4">
-              <Card className="border-border/70 bg-card/90">
-                <CardContent className="p-0">
-                  <div
-                    ref={scrollRef}
-                    className="h-[72vh] overflow-auto rounded-3xl"
-                  >
-                    <div className="min-w-[1600px]">
-                      <div className="sticky top-0 z-20 border-b border-border/70 bg-card/95 backdrop-blur">
-                        {table.getHeaderGroups().map((headerGroup) => (
-                          <div
-                            key={headerGroup.id}
-                            className="grid items-center gap-3 px-3 py-3 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground"
-                            style={{ gridTemplateColumns }}
-                          >
-                            {headerGroup.headers.map((header) => {
-                              const pinned = getPinnedStyles(header.column.id, true);
-
-                              return (
-                                <button
-                                  key={header.id}
-                                  type="button"
-                                  className={cn(
-                                    "flex items-center gap-2 px-2 text-left",
-                                    header.column.getCanSort()
-                                      ? "cursor-pointer"
-                                      : "cursor-default",
-                                    pinned.className,
-                                  )}
-                                  style={pinned.style}
-                                  onClick={header.column.getToggleSortingHandler()}
-                                >
-                                  {header.isPlaceholder
-                                    ? null
-                                    : flexRender(
-                                        header.column.columnDef.header,
-                                        header.getContext(),
-                                      )}
-                                  {header.column.getCanSort()
-                                    ? getSortIcon(header.column.getIsSorted())
-                                    : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-
-                      {rows.length > 0 ? (
-                        <div
-                          className="relative"
-                          style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
-                        >
-                          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                            const row = rows[virtualRow.index];
-                            const isFocused = focusedTransactionId === row.original.id;
-
-                            return (
-                              <div
-                                key={row.id}
-                                className={cn(
-                                  "absolute left-0 top-0 w-full px-3",
-                                  row.getIsSelected() ? "bg-muted/30" : "",
-                                )}
-                                style={{
-                                  height: `${virtualRow.size}px`,
-                                  transform: `translateY(${virtualRow.start}px)`,
-                                }}
-                              >
-                                <div
-                                  className={cn(
-                                    "grid min-h-[76px] items-center gap-3 border-b border-border/70 py-3 text-sm transition-colors hover:bg-muted/10",
-                                    isFocused ? "rounded-2xl ring-1 ring-ring/40" : "",
-                                  )}
-                                  style={{ gridTemplateColumns }}
-                                  onClick={() => setFocusedTransactionId(row.original.id)}
-                                >
-                                  {row.getVisibleCells().map((cell) => {
-                                    const pinned = getPinnedStyles(cell.column.id);
-
-                                    return (
-                                      <div
-                                        key={cell.id}
-                                        className={cn("min-w-0 px-2", pinned.className)}
-                                        style={pinned.style}
-                                      >
-                                        {flexRender(
-                                          cell.column.columnDef.cell,
-                                          cell.getContext(),
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="flex min-h-[360px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
-                          Nenhuma transacao encontrada para os filtros atuais.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="flex flex-col gap-3 rounded-3xl border border-border/70 bg-card/90 px-4 py-3 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="inline-flex items-center gap-2">
-                    <CheckCircle2 className="size-4 text-primary" />
-                    Somente status manter entra no consolidado.
-                  </span>
-                  <span className="inline-flex items-center gap-2">
-                    <CircleSlash className="size-4 text-destructive" />
-                    Exclusoes mantem auditoria completa.
-                  </span>
-                </div>
-                <span>
-                  {selectedTransactionIds.length} selecionadas • {transactions.length} nesta
-                  pagina
-                </span>
+          <>
+            {/* INLINE FILTERS */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[240px]">
+                <Filter className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      applyFilters();
+                    }
+                  }}
+                  placeholder="Buscar descricao, banco ou conta"
+                  className="pl-9"
+                />
               </div>
 
-              {pagination ? (
-                <div className="flex items-center justify-between gap-4 rounded-3xl border border-border/70 bg-card/90 px-4 py-3">
-                  <p className="text-sm text-muted-foreground">
-                    Pagina {pagination.page} de {pagination.totalPages} •{" "}
-                    {pagination.totalItems} registros
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={pagination.page <= 1}
-                      onClick={() => navigate({ page: pagination.page - 1 })}
-                    >
-                      Anterior
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={pagination.page >= pagination.totalPages}
-                      onClick={() => navigate({ page: pagination.page + 1 })}
-                    >
-                      Proxima
-                    </Button>
-                  </div>
-                </div>
+              <select
+                className={inlineSelectClass}
+                value={month ?? "all"}
+                onChange={(event) =>
+                  setMonth(
+                    event.target.value === "all" ? null : Number(event.target.value),
+                  )
+                }
+              >
+                <option value="all">Todos os meses</option>
+                {filterOptions.months.map((option) => (
+                  <option key={option} value={option}>
+                    Mes {String(option).padStart(2, "0")}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className={inlineSelectClass}
+                value={year ?? "all"}
+                onChange={(event) =>
+                  setYear(
+                    event.target.value === "all" ? null : Number(event.target.value),
+                  )
+                }
+              >
+                <option value="all">Todos os anos</option>
+                {filterOptions.years.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className={inlineSelectClass}
+                value={direction}
+                onChange={(event) =>
+                  setDirection(event.target.value as "all" | "credit" | "debit")
+                }
+              >
+                <option value="all">Credito + Debito</option>
+                <option value="credit">So credito</option>
+                <option value="debit">So debito</option>
+              </select>
+
+              <select
+                className={inlineSelectClass}
+                value={duplicate}
+                onChange={(event) =>
+                  setDuplicate(
+                    event.target.value as ReviewWorkspaceDuplicateFilter,
+                  )
+                }
+              >
+                <option value="all">Todas</option>
+                <option value="only">So duplicadas</option>
+                <option value="hide">Sem duplicadas</option>
+              </select>
+
+              <Button size="sm" onClick={applyFilters}>
+                Aplicar
+              </Button>
+              {hasActiveFilter ? (
+                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                  <X className="size-3.5" />
+                  Limpar
+                </Button>
               ) : null}
             </div>
 
-            <ReviewSidebar
-              query={query}
-              onQueryChange={setQuery}
-              month={month}
-              onMonthChange={setMonth}
-              year={year}
-              onYearChange={setYear}
-              direction={direction}
-              onDirectionChange={setDirection}
-              duplicate={duplicate}
-              onDuplicateChange={setDuplicate}
-              monthOptions={filterOptions.months}
-              yearOptions={filterOptions.years}
-              onApplyFilters={applyFilters}
-              onClearFilters={clearFilters}
-              selectedCount={selectedTransactionIds.length}
-              filteredCount={transactions.length}
-              pageCount={rows.length}
-              batchDecision={batchDecision}
-              onBatchDecisionChange={setBatchDecision}
-              batchReason={batchReason}
-              onBatchReasonChange={setBatchReason}
-              batchNote={batchNote}
-              onBatchNoteChange={setBatchNote}
-              onApplyBatch={handleBatchApply}
-              isApplyingBatch={isApplyingBatch}
-              onUndo={handleUndo}
-              canUndo={Boolean(lastAction)}
-              isUndoing={isUndoing}
-              onOpenLogs={() => setLogsOpen(true)}
-            />
-          </div>
+            {/* TABLE */}
+            {showGrid ? (
+              <div className="overflow-hidden rounded-xl border bg-card/60">
+                <div
+                  ref={scrollRef}
+                  className="h-[calc(100vh-280px)] min-h-[420px] overflow-auto"
+                >
+                  <div className="min-w-[820px]">
+                    <div className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur">
+                      {table.getHeaderGroups().map((headerGroup) => (
+                        <div
+                          key={headerGroup.id}
+                          className="grid items-center gap-3 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                          style={{ gridTemplateColumns }}
+                        >
+                          {headerGroup.headers.map((header) => (
+                            <button
+                              key={header.id}
+                              type="button"
+                              className={cn(
+                                "flex items-center gap-1.5 text-left",
+                                header.column.getCanSort()
+                                  ? "cursor-pointer"
+                                  : "cursor-default",
+                                header.column.id === "amount" && "justify-end",
+                              )}
+                              onClick={header.column.getToggleSortingHandler()}
+                            >
+                              {header.isPlaceholder
+                                ? null
+                                : flexRender(
+                                    header.column.columnDef.header,
+                                    header.getContext(),
+                                  )}
+                              {header.column.getCanSort()
+                                ? getSortIcon(header.column.getIsSorted())
+                                : null}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+
+                    {rows.length > 0 ? (
+                      <div
+                        className="relative"
+                        style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+                      >
+                        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                          const row = rows[virtualRow.index];
+                          const isSelected = row.getIsSelected();
+                          const isFocused = focusedTransactionId === row.original.id;
+
+                          return (
+                            <div
+                              key={row.id}
+                              className={cn(
+                                "absolute left-0 top-0 w-full",
+                                isSelected ? "bg-primary/5" : "",
+                              )}
+                              style={{
+                                height: `${virtualRow.size}px`,
+                                transform: `translateY(${virtualRow.start}px)`,
+                              }}
+                            >
+                              <div
+                                className={cn(
+                                  "grid h-full items-center gap-3 border-b px-4 text-sm transition-colors hover:bg-muted/30",
+                                  isFocused ? "ring-1 ring-inset ring-primary/40" : "",
+                                )}
+                                style={{ gridTemplateColumns }}
+                                onClick={() =>
+                                  setFocusedTransactionId(row.original.id)
+                                }
+                              >
+                                {row.getVisibleCells().map((cell) => (
+                                  <div
+                                    key={cell.id}
+                                    className={cn(
+                                      "min-w-0",
+                                      cell.column.id === "amount" && "text-right",
+                                    )}
+                                  >
+                                    {flexRender(
+                                      cell.column.columnDef.cell,
+                                      cell.getContext(),
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="flex min-h-[320px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                        Nenhuma transacao encontrada para os filtros atuais.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* PAGINATION */}
+            {pagination ? (
+              <div className="flex items-center justify-between rounded-xl border bg-card/60 px-4 py-2 text-xs text-muted-foreground">
+                <span>
+                  Pagina {pagination.page} de {pagination.totalPages} •{" "}
+                  {pagination.totalItems} registros
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.page <= 1}
+                    onClick={() => navigate({ page: pagination.page - 1 })}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.page >= pagination.totalPages}
+                    onClick={() => navigate({ page: pagination.page + 1 })}
+                  >
+                    Proxima
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
+
+      {/* FLOATING BATCH TOOLBAR */}
+      {selectedTransactionIds.length > 0 && showGrid ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+          <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-2xl border bg-card px-4 py-2.5 shadow-lg">
+            <span className="text-sm font-medium">
+              {selectedTransactionIds.length} selecionadas
+            </span>
+            <div className="h-5 w-px bg-border" />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isApplyingBatch}
+              onClick={() => applyBatchDecision("manter")}
+            >
+              Manter
+            </Button>
+            <select
+              className={cn(inlineSelectClass, "h-8")}
+              value={batchReason}
+              onChange={(event) =>
+                setBatchReason(event.target.value as "" | ExclusionReason)
+              }
+            >
+              <option value="">Motivo (opcional)</option>
+              {exclusionReasonOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={isApplyingBatch}
+              onClick={() => applyBatchDecision("excluir")}
+            >
+              Excluir
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={isApplyingBatch}
+              onClick={() => applyBatchDecision("pendente")}
+            >
+              Pendente
+            </Button>
+            <div className="h-5 w-px bg-border" />
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!lastAction || isUndoing}
+              onClick={handleUndo}
+            >
+              <Undo2 className="size-4" />
+              Desfazer
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setRowSelection({})}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
+
+function DecisionPill({
+  label,
+  active,
+  tone,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  tone: "success" | "danger" | "neutral";
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const activeClass =
+    tone === "success"
+      ? "bg-emerald-500 text-white hover:bg-emerald-600 dark:bg-emerald-600"
+      : tone === "danger"
+        ? "bg-red-500 text-white hover:bg-red-600 dark:bg-red-600"
+        : "bg-muted text-foreground";
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "inline-flex min-w-[2rem] items-center justify-center rounded-md px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50",
+        active
+          ? activeClass
+          : "border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function KpiInline({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "default" | "muted" | "success" | "danger";
+}) {
+  const valueClass =
+    tone === "success"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : tone === "danger"
+        ? "text-red-600 dark:text-red-400"
+        : tone === "muted"
+          ? "text-muted-foreground"
+          : "text-foreground";
+
+  return (
+    <div className="flex flex-col leading-tight">
+      <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </span>
+      <span className={cn("text-lg font-semibold tabular-nums", valueClass)}>
+        {value}
+      </span>
+    </div>
+  );
+}
+

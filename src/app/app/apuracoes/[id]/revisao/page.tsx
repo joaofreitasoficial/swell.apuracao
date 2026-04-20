@@ -8,6 +8,7 @@ import {
   getReviewWorkspaceCounts,
   getReviewWorkspaceFilterOptions,
   listAuditLogsByApuracao,
+  listCreditsByMonthForApuracao,
   listPaginatedReviewTransactionsByApuracao,
   parseReviewWorkspaceFilters,
 } from "@/lib/operations/queries";
@@ -48,10 +49,16 @@ export default async function ApuracaoReviewPage({
     );
   }
 
-  const [reviewPage, consolidated] = await Promise.all([
+  const [reviewPage, consolidated, monthlyBuckets] = await Promise.all([
     listPaginatedReviewTransactionsByApuracao(id, filters),
     filters.tab === "consolidado" ? refreshMonthlySummaries(id) : Promise.resolve(null),
+    filters.tab === "meses" ? listCreditsByMonthForApuracao(id) : Promise.resolve(null),
   ]);
+
+  const hidesPagination =
+    filters.tab === "consolidado" ||
+    filters.tab === "logs" ||
+    filters.tab === "meses";
 
   return (
     <ReviewWorkspace
@@ -63,9 +70,10 @@ export default async function ApuracaoReviewPage({
       counts={counts}
       filterOptions={filterOptions}
       initialTransactions={reviewPage.data}
-      pagination={filters.tab === "consolidado" || filters.tab === "logs" ? null : reviewPage.pagination}
+      pagination={hidesPagination ? null : reviewPage.pagination}
       auditLogs={auditLogs}
       consolidated={consolidated}
+      monthlyBuckets={monthlyBuckets}
     />
   );
 }
