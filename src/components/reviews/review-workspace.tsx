@@ -64,8 +64,8 @@ import type {
 
 const columnHelper = createColumnHelper<ReviewableTransactionRecord>();
 const gridTemplateColumns =
-  "44px 104px minmax(320px,1fr) 132px 220px";
-const rowHeight = 58;
+  "32px 88px minmax(220px,1fr) 116px 176px";
+const rowHeight = 50;
 
 const inlineSelectClass =
   "h-9 rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -656,10 +656,10 @@ export function ReviewWorkspace({
       header: "Data",
       cell: ({ row }) => (
         <div className="leading-tight">
-          <p className="text-sm font-medium">
+          <p className="text-xs font-medium">
             {formatDate(row.original.transactionDate)}
           </p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[10px] text-muted-foreground">
             {getMonthYearLabel(row.original.monthRef, row.original.yearRef)}
           </p>
         </div>
@@ -669,14 +669,17 @@ export function ReviewWorkspace({
       id: "description",
       header: "Descricao",
       cell: ({ row }) => (
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="line-clamp-1 text-sm font-medium" title={row.original.description}>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p
+            className="line-clamp-1 text-xs font-medium"
+            title={row.original.description}
+          >
             {row.original.description}
           </p>
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <span className="truncate">{row.original.bankName}</span>
             {row.original.isDuplicate ? (
-              <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
+              <Badge variant="destructive" className="h-3.5 px-1 text-[9px]">
                 Duplicada
               </Badge>
             ) : null}
@@ -690,16 +693,19 @@ export function ReviewWorkspace({
       cell: ({ row }) => {
         const isCredit = row.original.direction === "credit";
         return (
-          <div className="text-right">
+          <div className="text-right leading-tight">
             <p
               className={cn(
-                "text-sm font-semibold tabular-nums",
-                isCredit ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground",
+                "text-xs font-semibold tabular-nums",
+                isCredit
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-muted-foreground",
               )}
             >
-              {isCredit ? "+" : "-"}{formatCurrency(row.original.amount)}
+              {isCredit ? "+" : "-"}
+              {formatCurrency(row.original.amount)}
             </p>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               {isCredit ? "Entrada" : "Saida"}
             </p>
           </div>
@@ -999,12 +1005,12 @@ export function ReviewWorkspace({
                   ref={scrollRef}
                   className="h-[calc(100vh-280px)] min-h-[420px] overflow-auto"
                 >
-                  <div className="min-w-[820px]">
+                  <div className="min-w-[640px]">
                     <div className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur">
                       {table.getHeaderGroups().map((headerGroup) => (
                         <div
                           key={headerGroup.id}
-                          className="grid items-center gap-3 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                          className="grid items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
                           style={{ gridTemplateColumns }}
                         >
                           {headerGroup.headers.map((header) => (
@@ -1059,7 +1065,7 @@ export function ReviewWorkspace({
                             >
                               <div
                                 className={cn(
-                                  "grid h-full items-center gap-3 border-b px-4 text-sm transition-colors hover:bg-muted/30",
+                                  "grid h-full items-center gap-2 border-b px-3 text-xs transition-colors hover:bg-muted/30",
                                   isFocused ? "ring-1 ring-inset ring-primary/40" : "",
                                 )}
                                 style={{ gridTemplateColumns }}

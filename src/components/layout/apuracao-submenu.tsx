@@ -68,16 +68,16 @@ export function ApuracaoSubmenu({
   ];
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r bg-card/60 p-4 lg:block">
-      <div className="mb-4 space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+    <aside className="hidden w-48 shrink-0 border-r bg-card/60 px-3 py-4 lg:block">
+      <div className="mb-3 space-y-0.5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           Apuracao
         </p>
-        <h2 className="line-clamp-2 text-base font-semibold leading-snug">
+        <h2 className="line-clamp-2 text-xs font-semibold leading-snug">
           {apuracaoName}
         </h2>
         {clientName ? (
-          <p className="line-clamp-1 text-xs text-muted-foreground">
+          <p className="line-clamp-1 text-[10px] text-muted-foreground">
             {clientName}
           </p>
         ) : null}
@@ -97,7 +97,7 @@ export function ApuracaoSubmenu({
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-start gap-3 rounded-xl px-3 py-2 text-sm transition-colors",
+                "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors",
                 isActive
                   ? "bg-primary/10 text-foreground"
                   : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -105,23 +105,18 @@ export function ApuracaoSubmenu({
             >
               <Icon
                 className={cn(
-                  "mt-0.5 size-4 shrink-0",
+                  "size-3.5 shrink-0",
                   isActive ? "text-primary" : "text-muted-foreground",
                 )}
               />
-              <div className="min-w-0 flex-1">
-                <p
-                  className={cn(
-                    "font-medium leading-tight",
-                    isActive ? "text-foreground" : "",
-                  )}
-                >
-                  {item.label}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {item.description}
-                </p>
-              </div>
+              <span
+                className={cn(
+                  "truncate font-medium",
+                  isActive ? "text-foreground" : "",
+                )}
+              >
+                {item.label}
+              </span>
             </Link>
           );
         })}

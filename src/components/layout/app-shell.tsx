@@ -26,31 +26,31 @@ export function AppShell({
 }: AppShellProps) {
   return (
     <div className="flex min-h-screen bg-muted/30">
-      <aside className="hidden w-60 shrink-0 border-r bg-card/90 p-5 lg:flex lg:flex-col">
+      <aside className="hidden w-48 shrink-0 border-r bg-card/90 px-3 py-4 lg:flex lg:flex-col">
         <div>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
             Invictus
           </span>
-          <h2 className="mt-2 text-base font-semibold tracking-tight">
+          <h2 className="mt-1 text-sm font-semibold tracking-tight">
             {areaLabel}
           </h2>
         </div>
 
-        <div className="mt-6">
+        <div className="mt-5">
           <SidebarNav items={navigationItems} />
         </div>
 
-        <div className="mt-auto space-y-3 rounded-2xl border bg-background/70 p-3">
+        <div className="mt-auto space-y-2 rounded-xl border bg-background/70 p-2.5">
           <div>
-            <p className="truncate text-sm font-medium">{user.fullName}</p>
-            <p className="truncate text-xs text-muted-foreground">
+            <p className="truncate text-xs font-medium">{user.fullName}</p>
+            <p className="truncate text-[10px] text-muted-foreground">
               {user.email}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <ThemeToggle />
             <form action={logoutAction} className="flex-1">
-              <Button type="submit" variant="outline" size="sm" className="w-full">
+              <Button type="submit" variant="outline" size="sm" className="w-full text-xs">
                 Sair
               </Button>
             </form>
@@ -73,7 +73,7 @@ export function AppShell({
             </form>
           </div>
         </div>
-        <div className="flex flex-1 flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
+        <div className="flex flex-1 flex-col gap-5 px-4 py-4 sm:px-5 lg:px-6">
           {children}
         </div>
       </main>
