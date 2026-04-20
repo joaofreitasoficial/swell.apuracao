@@ -80,11 +80,15 @@ export function ApuracaoForm({
             <select
               id="status"
               name="status"
-              className="flex h-8 w-full rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-hidden focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="flex h-8 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-hidden focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               defaultValue={initialValues?.status ?? "draft"}
             >
               {apuracaoStatuses.map((status) => (
-                <option key={status} value={status}>
+                <option
+                  key={status}
+                  value={status}
+                  className="bg-background text-foreground"
+                >
                   {getApuracaoStatusLabel(status)}
                 </option>
               ))}
