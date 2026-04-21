@@ -8,6 +8,8 @@ const bankMatchers = [
   { bank: "Nubank", patterns: [/\bnubank\b/i, /\bnu pagamentos\b/i] },
   { bank: "Sicoob", patterns: [/sicoob/i] },
   { bank: "Sicredi", patterns: [/sicredi/i] },
+  { bank: "PicPay", patterns: [/\bpicpay\b/i, /picpay\.com/i] },
+  { bank: "Mercado Pago", patterns: [/mercado\s*pago/i, /mercadopago\.com/i] },
 ];
 
 const accountMatchers = [

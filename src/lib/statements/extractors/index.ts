@@ -1,7 +1,11 @@
+import { CaixaRegexAdapter } from "@/lib/statements/extractors/adapters/caixa-regex-adapter";
 import { GeminiExtractionAdapter } from "@/lib/statements/extractors/adapters/gemini-adapter";
 import { GenericRegexAdapter } from "@/lib/statements/extractors/adapters/generic-regex-adapter";
+import { ItauRegexAdapter } from "@/lib/statements/extractors/adapters/itau-regex-adapter";
+import { MercadoPagoRegexAdapter } from "@/lib/statements/extractors/adapters/mercadopago-regex-adapter";
 import { NubankRegexAdapter } from "@/lib/statements/extractors/adapters/nubank-regex-adapter";
 import { OpenAiExtractionAdapter } from "@/lib/statements/extractors/adapters/openai-adapter";
+import { PicPayRegexAdapter } from "@/lib/statements/extractors/adapters/picpay-regex-adapter";
 import { normalizeTransactions } from "@/lib/statements/extractors/normalizers";
 import type {
   StatementExtractionAdapter,
@@ -20,6 +24,10 @@ import type {
  */
 const adapters: StatementExtractionAdapter[] = [
   new NubankRegexAdapter(),
+  new ItauRegexAdapter(),
+  new CaixaRegexAdapter(),
+  new PicPayRegexAdapter(),
+  new MercadoPagoRegexAdapter(),
   new GeminiExtractionAdapter(),
   new OpenAiExtractionAdapter(),
   new GenericRegexAdapter(),
