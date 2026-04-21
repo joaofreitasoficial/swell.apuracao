@@ -11,6 +11,8 @@ type KeptTransaction = {
   amount: number;
   monthRef: number;
   yearRef: number;
+  bankName: string | null;
+  description: string | null;
 };
 
 type RenderApuracaoVaziaParams = {
@@ -104,6 +106,54 @@ async function loadTemplateArrayBuffer(): Promise<ArrayBuffer> {
   return copy;
 }
 
+function collectDistinctBanks(transactions: KeptTransaction[]): string[] {
+  const seen = new Set<string>();
+  for (const tx of transactions) {
+    const name = (tx.bankName ?? "").trim();
+    if (name.length > 0) {
+      seen.add(name);
+    }
+  }
+  return Array.from(seen);
+}
+
+function appendDetailSheet(
+  workbook: ExcelJS.Workbook,
+  transactions: KeptTransaction[],
+) {
+  const sheet = workbook.addWorksheet("Detalhamento por banco");
+
+  sheet.columns = [
+    { header: "Data", key: "date", width: 12 },
+    { header: "Mês/Ano", key: "monthYear", width: 14 },
+    { header: "Banco", key: "bank", width: 20 },
+    { header: "Descrição", key: "description", width: 60 },
+    { header: "Valor", key: "amount", width: 14 },
+  ];
+
+  const headerRow = sheet.getRow(1);
+  headerRow.font = { bold: true };
+
+  const sorted = [...transactions].sort((a, b) => {
+    if (a.yearRef !== b.yearRef) return a.yearRef - b.yearRef;
+    if (a.monthRef !== b.monthRef) return a.monthRef - b.monthRef;
+    return a.transactionDate.localeCompare(b.transactionDate);
+  });
+
+  for (const tx of sorted) {
+    sheet.addRow({
+      date: tx.transactionDate,
+      monthYear: buildMonthLabel(tx.monthRef, tx.yearRef),
+      bank: tx.bankName ?? "—",
+      description: tx.description ?? "",
+      amount: Number(tx.amount),
+    });
+  }
+
+  // Formatação numérica brasileira para a coluna Valor.
+  sheet.getColumn("amount").numFmt = '"R$" #,##0.00';
+}
+
 export async function renderApuracaoVazia(params: RenderApuracaoVaziaParams): Promise<Uint8Array> {
   const templateArrayBuffer = await loadTemplateArrayBuffer();
 
@@ -118,6 +168,8 @@ export async function renderApuracaoVazia(params: RenderApuracaoVaziaParams): Pr
   }
 
   const monthGroups = groupTransactionsByMonth(params.transactions);
+  const distinctBanks = collectDistinctBanks(params.transactions);
+  const hasMultipleBanks = distinctBanks.length >= 2;
 
   worksheet.getCell(MONTHS_COUNT_CELL).value = monthGroups.length;
 
@@ -135,13 +187,28 @@ export async function renderApuracaoVazia(params: RenderApuracaoVaziaParams): Pr
 
     itemsToRender.forEach((transaction, itemIndex) => {
       const targetRow = DATA_START_ROW + itemIndex;
-      worksheet.getCell(`${column}${targetRow}`).value = Number(transaction.amount);
+      const cell = worksheet.getCell(`${column}${targetRow}`);
+      cell.value = Number(transaction.amount);
+
+      // Comentário com o banco: só anexa quando há múltiplos bancos na apuração,
+      // senão polui células sem ganho informacional.
+      if (hasMultipleBanks) {
+        const bank = transaction.bankName?.trim() || "Banco não identificado";
+        cell.note = {
+          texts: [{ text: `Banco: ${bank}` }],
+          margins: { insetmode: "auto" },
+        };
+      }
     });
 
     worksheet.getCell(`${column}${TOTAL_ROW}`).value = {
       formula: `SUM(${column}${DATA_START_ROW}:${column}${DATA_END_ROW})`,
     };
   });
+
+  if (hasMultipleBanks) {
+    appendDetailSheet(workbook, params.transactions);
+  }
 
   const outputBuffer = await workbook.xlsx.writeBuffer();
   return new Uint8Array(outputBuffer);

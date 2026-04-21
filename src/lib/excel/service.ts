@@ -25,6 +25,8 @@ type KeptCreditTransactionRow = {
   month_ref: number;
   year_ref: number;
   direction: "credit" | "debit";
+  bank_name: string | null;
+  description: string | null;
 };
 
 type ExcelTemplateRow = {
@@ -134,7 +136,7 @@ async function loadKeptCreditTransactions(apuracaoId: string): Promise<KeptTrans
   const { data, error } = await admin
     .from("transactions")
     .select(
-      "id,transaction_date,amount,month_ref,year_ref,direction,transaction_reviews!inner(decision)",
+      "id,transaction_date,amount,month_ref,year_ref,direction,bank_name,description,transaction_reviews!inner(decision)",
     )
     .eq("apuracao_id", apuracaoId)
     .eq("direction", "credit")
@@ -151,6 +153,8 @@ async function loadKeptCreditTransactions(apuracaoId: string): Promise<KeptTrans
     amount: Number(row.amount),
     monthRef: row.month_ref,
     yearRef: row.year_ref,
+    bankName: row.bank_name,
+    description: row.description,
   }));
 }
 
